@@ -1,0 +1,172 @@
+{
+  "projects": [
+    {
+      "id": "casa-aguilas-chiapas",
+      "name": "Casa Águilas",
+      "location": "Chiapas, México",
+      "updatedAt": "2026-08-12",
+      "structureType": "Reinforced concrete",
+      "status": "Ready",
+      "floors": 1,
+      "floorHeight": 2.8,
+      "soilType": "Stiff soil",
+      "thumbnailVariant": "house",
+      "progress": 100
+    },
+    {
+      "id": "casa-miraflores",
+      "name": "Casa Miraflores",
+      "location": "Miraflores, Lima",
+      "updatedAt": "2026-08-08",
+      "structureType": "Reinforced concrete",
+      "status": "Ready",
+      "floors": 2,
+      "floorHeight": 2.8,
+      "soilType": "Dense sand",
+      "thumbnailVariant": "blueprint",
+      "progress": 100
+    },
+    {
+      "id": "edificio-central",
+      "name": "Edificio Central",
+      "location": "San Isidro, Lima",
+      "updatedAt": "2026-08-06",
+      "structureType": "Dual system",
+      "status": "Processing",
+      "floors": 8,
+      "floorHeight": 3.1,
+      "soilType": "Gravel",
+      "thumbnailVariant": "tower",
+      "progress": 68
+    },
+    {
+      "id": "vivienda-unifamiliar",
+      "name": "Vivienda Unifamiliar",
+      "location": "La Molina, Lima",
+      "updatedAt": "2026-08-01",
+      "structureType": "Confined masonry",
+      "status": "Draft",
+      "floors": 2,
+      "floorHeight": 2.7,
+      "soilType": "Stiff soil",
+      "thumbnailVariant": "house",
+      "progress": 32
+    }
+  ],
+  "blueprints": [
+    {
+      "projectId": "casa-aguilas-chiapas",
+      "width": 1119,
+      "height": 1495,
+      "scale": "1:100",
+      "sourceImage": "/sources/casa-aguilas-planta-baja.jpg",
+      "levels": [
+        { "id": "ag-level-1", "name": "Ground floor", "elevation": 0 }
+      ],
+      "rooms": [
+        { "id": "ag-patio-back", "name": "Rear garden", "x": 407, "y": 128, "width": 200, "height": 162, "area": 12.6 },
+        { "id": "ag-living", "name": "Living / Dining", "x": 407, "y": 290, "width": 200, "height": 440, "area": 34.0 },
+        { "id": "ag-kitchen", "name": "Kitchen", "x": 607, "y": 290, "width": 206, "height": 299, "area": 13.5 },
+        { "id": "ag-stair", "name": "Spiral stair", "x": 677, "y": 589, "width": 136, "height": 141, "area": 7.6 },
+        { "id": "ag-garage", "name": "Garage", "x": 407, "y": 730, "width": 200, "height": 405, "area": 30.0 },
+        { "id": "ag-bathroom", "name": "Bathroom", "x": 677, "y": 730, "width": 136, "height": 119, "area": 6.2 },
+        { "id": "ag-bedroom", "name": "Bedroom", "x": 607, "y": 849, "width": 206, "height": 198, "area": 15.4 },
+        { "id": "ag-front-garden", "name": "Front garden", "x": 607, "y": 1047, "width": 206, "height": 88, "area": 6.4 }
+      ],
+      "walls": [
+        { "id": "ag-wall-left-social", "start": [407, 290], "end": [407, 730], "thickness": 18, "height": 2.8 },
+        { "id": "ag-wall-back-social", "start": [407, 290], "end": [607, 290], "thickness": 16, "height": 2.8 },
+        { "id": "ag-wall-social-kitchen", "start": [607, 290], "end": [607, 510], "thickness": 14, "height": 2.8 },
+        { "id": "ag-wall-kitchen-back", "start": [607, 290], "end": [813, 290], "thickness": 18, "height": 2.8 },
+        { "id": "ag-wall-kitchen-right", "start": [813, 290], "end": [813, 589], "thickness": 18, "height": 2.8 },
+        { "id": "ag-wall-stair-top", "start": [677, 589], "end": [813, 589], "thickness": 14, "height": 2.8 },
+        { "id": "ag-wall-stair-left", "start": [677, 589], "end": [677, 730], "thickness": 14, "height": 2.8 },
+        { "id": "ag-wall-stair-right", "start": [813, 589], "end": [813, 730], "thickness": 18, "height": 2.8 },
+        { "id": "ag-wall-social-garage", "start": [407, 730], "end": [607, 730], "thickness": 14, "height": 2.8 },
+        { "id": "ag-wall-garage-right", "start": [607, 730], "end": [607, 1135], "thickness": 18, "height": 2.8 },
+        { "id": "ag-wall-bath-top", "start": [677, 730], "end": [813, 730], "thickness": 14, "height": 2.8 },
+        { "id": "ag-wall-bath-left", "start": [677, 730], "end": [677, 849], "thickness": 14, "height": 2.8 },
+        { "id": "ag-wall-right-lower", "start": [813, 730], "end": [813, 1135], "thickness": 18, "height": 2.8 },
+        { "id": "ag-wall-bath-bedroom", "start": [677, 849], "end": [813, 849], "thickness": 14, "height": 2.8 },
+        { "id": "ag-wall-bedroom-left", "start": [607, 849], "end": [607, 1047], "thickness": 18, "height": 2.8 },
+        { "id": "ag-wall-bedroom-front", "start": [607, 1047], "end": [813, 1047], "thickness": 16, "height": 2.8 }
+      ],
+      "doors": [
+        { "id": "ag-door-back", "wallId": "ag-wall-kitchen-back", "x": 711, "y": 290, "width": 58, "rotation": 0 },
+        { "id": "ag-door-bath", "wallId": "ag-wall-bath-left", "x": 677, "y": 793, "width": 58, "rotation": 90 },
+        { "id": "ag-door-bedroom", "wallId": "ag-wall-bedroom-left", "x": 607, "y": 889, "width": 60, "rotation": 90 }
+      ],
+      "windows": [
+        { "id": "ag-window-social-back", "wallId": "ag-wall-back-social", "x": 510, "y": 290, "width": 145, "rotation": 0 },
+        { "id": "ag-window-social-garage", "wallId": "ag-wall-social-garage", "x": 520, "y": 730, "width": 130, "rotation": 0 },
+        { "id": "ag-window-bedroom-front", "wallId": "ag-wall-bedroom-front", "x": 705, "y": 1047, "width": 135, "rotation": 0 }
+      ],
+      "columns": [
+        { "id": "ag-column-1", "x": 407, "y": 290, "size": 20 },
+        { "id": "ag-column-2", "x": 607, "y": 290, "size": 20 },
+        { "id": "ag-column-3", "x": 813, "y": 290, "size": 20 },
+        { "id": "ag-column-4", "x": 607, "y": 1047, "size": 20 },
+        { "id": "ag-column-5", "x": 813, "y": 1047, "size": 20 }
+      ],
+      "stairs": [
+        { "id": "ag-spiral-stair", "x": 744, "y": 660, "radius": 62, "type": "spiral" }
+      ],
+      "materials": ["Concrete", "Brick", "Glass", "Wood"],
+      "seismic": {
+        "defaultIntensity": 5,
+        "defaultDuration": 12,
+        "defaultDirection": "Y",
+        "maxDisplacement": 16.8,
+        "maxDrift": 0.0055
+      }
+    }
+  ],
+  "blueprint": {
+    "projectId": "casa-miraflores",
+    "width": 1200,
+    "height": 760,
+    "scale": "1:100",
+    "levels": [
+      { "id": "level-1", "name": "Ground floor", "elevation": 0 },
+      { "id": "level-2", "name": "Second floor", "elevation": 2.8 }
+    ],
+    "rooms": [
+      { "id": "room-living", "name": "Living / Dining", "x": 120, "y": 96, "width": 500, "height": 310, "area": 36.8 },
+      { "id": "room-kitchen", "name": "Kitchen", "x": 620, "y": 96, "width": 350, "height": 310, "area": 18.2 },
+      { "id": "room-bedroom", "name": "Main bedroom", "x": 120, "y": 406, "width": 500, "height": 230, "area": 24.4 },
+      { "id": "room-bath", "name": "Bathroom", "x": 620, "y": 406, "width": 350, "height": 230, "area": 10.1 }
+    ],
+    "walls": [
+      { "id": "wall-north", "start": [120, 96], "end": [970, 96], "thickness": 16, "height": 2.8 },
+      { "id": "wall-east", "start": [970, 96], "end": [970, 636], "thickness": 16, "height": 2.8 },
+      { "id": "wall-south", "start": [970, 636], "end": [120, 636], "thickness": 16, "height": 2.8 },
+      { "id": "wall-west", "start": [120, 636], "end": [120, 96], "thickness": 16, "height": 2.8 },
+      { "id": "wall-horizontal", "start": [120, 406], "end": [970, 406], "thickness": 12, "height": 2.8 },
+      { "id": "wall-vertical", "start": [620, 96], "end": [620, 636], "thickness": 12, "height": 2.8 }
+    ],
+    "doors": [
+      { "id": "door-entry", "wallId": "wall-north", "x": 420, "y": 96, "width": 92, "rotation": 0 },
+      { "id": "door-bedroom", "wallId": "wall-horizontal", "x": 500, "y": 406, "width": 82, "rotation": 0 },
+      { "id": "door-bath", "wallId": "wall-vertical", "x": 620, "y": 470, "width": 76, "rotation": 90 }
+    ],
+    "windows": [
+      { "id": "window-living", "wallId": "wall-west", "x": 120, "y": 210, "width": 112, "rotation": 90 },
+      { "id": "window-kitchen", "wallId": "wall-east", "x": 970, "y": 205, "width": 100, "rotation": 90 },
+      { "id": "window-bedroom", "wallId": "wall-south", "x": 310, "y": 636, "width": 130, "rotation": 0 }
+    ],
+    "columns": [
+      { "id": "column-1", "x": 120, "y": 96, "size": 26 },
+      { "id": "column-2", "x": 620, "y": 96, "size": 26 },
+      { "id": "column-3", "x": 970, "y": 636, "size": 26 },
+      { "id": "column-4", "x": 120, "y": 636, "size": 26 }
+    ],
+    "materials": ["Concrete", "Brick", "Glass", "Wood"],
+    "seismic": {
+      "defaultIntensity": 5,
+      "defaultDuration": 12,
+      "defaultDirection": "X",
+      "maxDisplacement": 18.4,
+      "maxDrift": 0.006
+    }
+  }
+}
