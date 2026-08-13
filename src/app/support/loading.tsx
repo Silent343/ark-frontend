@@ -1,0 +1,2 @@
+import { Skeleton } from "@/shared/presentation/components/ui";
+export default function Loading(){return <div className="mx-auto max-w-[1460px]"><Skeleton className="h-10 w-64"/><Skeleton className="mt-3 h-4 w-[38rem] max-w-full"/><Skeleton className="mt-8 h-13"/><div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({length:4},(_,index)=><Skeleton key={index} className="h-44"/>)}</div></div>;}

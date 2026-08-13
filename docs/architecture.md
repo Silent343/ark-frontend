@@ -10,6 +10,7 @@ Teluria uses explicit bounded contexts. Clean Architecture layers live **inside*
 | `plan-digitization` | Semantic blueprint, rooms, walls, openings, columns, and 2D correction | None |
 | `spatial-visualization` | Translation of a semantic blueprint into a navigable 3D scene | `plan-digitization` public contract |
 | `seismic-simulation` | Educational excitation scenario, visual response, metrics, and chart | `spatial-visualization` public contract |
+| `workspace-administration` | Professional profile, local preferences, help content, and support tickets | None |
 
 `composition` is not a domain. It is the application shell's orchestration layer. It joins read models from Project Management and Plan Digitization for screens that require both, while keeping those bounded contexts mutually unaware.
 
@@ -44,5 +45,6 @@ bounded-contexts/<context>/
 
 - `JsonProjectRepository` in Project Management reads project records.
 - `JsonBlueprintRepository` in Plan Digitization reads the semantic plan.
+- `JsonWorkspaceAdministrationRepository` reads profile, preferences, and support seeds, then overlays editable state through browser storage.
 
 When FastAPI is introduced, each adapter can be replaced independently without changing its domain or use cases.

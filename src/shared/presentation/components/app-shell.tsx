@@ -14,6 +14,7 @@ import {
   Menu,
   Settings,
   Sparkles,
+  UserRound,
   X,
 } from "lucide-react";
 
@@ -59,17 +60,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             })}
           </div>
           <p className="mb-3 mt-8 px-3 font-mono text-[9px] font-semibold uppercase tracking-[.2em] text-white/35">Soporte</p>
-          <Link href="#" className="flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] text-white/50 hover:bg-white/[.05] hover:text-white"><HelpCircle size={17} /> Centro de ayuda</Link>
-          <Link href="#" className="flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] text-white/50 hover:bg-white/[.05] hover:text-white"><Settings size={17} /> Preferencias</Link>
+          <Link href="/support" className={`flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] transition ${pathname === "/support" ? "bg-white/[.09] text-white shadow-[inset_3px_0_0_#ff6a2b]" : "text-white/50 hover:bg-white/[.05] hover:text-white"}`}><HelpCircle size={17} /> Centro de ayuda</Link>
+          <Link href="/preferences" className={`flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] transition ${pathname === "/preferences" ? "bg-white/[.09] text-white shadow-[inset_3px_0_0_#ff6a2b]" : "text-white/50 hover:bg-white/[.05] hover:text-white"}`}><Settings size={17} /> Preferencias</Link>
         </nav>
 
-        <div className="relative m-4 rounded-2xl border border-white/10 bg-white/[.04] p-3.5">
+        <Link href="/profile" className={`relative m-4 rounded-2xl border p-3.5 transition hover:bg-white/[.07] ${pathname === "/profile" ? "border-[#ff6a2b]/50 bg-white/[.08]" : "border-white/10 bg-white/[.04]"}`}>
           <div className="flex items-center gap-3">
             <div className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-[#f3c4a8] to-[#8ea9a1] text-xs font-bold text-[#111815]">GR</div>
             <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">Gabriel R.</p><p className="mt-0.5 truncate text-[10px] text-white/40">Espacio de arquitectura</p></div>
             <ChevronDown size={14} className="text-white/35" />
           </div>
-        </div>
+        </Link>
       </aside>
 
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#dfe2d9] bg-[#f7f7f2]/95 px-4 backdrop-blur lg:hidden">
@@ -77,7 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-2"><Link href="/projects/new" className="grid size-9 place-items-center rounded-xl bg-[#ff6a2b] text-white"><Sparkles size={17} /></Link><button aria-label="Abrir navegación" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)} className="grid size-9 place-items-center rounded-xl border border-[#dfe2d9] bg-white"><Menu size={18} /></button></div>
       </header>
 
-      {mobileOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="Cerrar navegación" onClick={()=>setMobileOpen(false)} className="absolute inset-0 bg-[#111815]/55 backdrop-blur-sm"/><aside className="absolute inset-y-0 right-0 w-[min(86vw,320px)] bg-[#111815] p-5 text-white shadow-2xl"><div className="flex items-center justify-between border-b border-white/10 pb-5"><div className="flex items-center gap-2.5"><div className="grid size-9 place-items-center rounded-xl bg-white text-[#30382f]"><Layers3 size={18}/></div><span className="font-semibold">Teluria</span></div><button aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)} className="grid size-9 place-items-center rounded-xl border border-white/10 text-white/70"><X size={17}/></button></div><nav className="mt-6 space-y-2">{navigation.map((item)=>{const Icon=item.icon;const active=item.match(pathname);return <Link key={item.label} href={item.href} onClick={()=>setMobileOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm ${active ? "bg-white/10 text-white" : "text-white/55"}`}><Icon size={17} className={active ? "text-[#ff8755]" : ""}/>{item.label}</Link>;})}</nav><div className="absolute inset-x-5 bottom-6 rounded-2xl border border-white/10 bg-white/[.04] p-4"><p className="text-xs font-semibold">Gabriel R.</p><p className="mt-1 text-[10px] text-white/40">Espacio de arquitectura</p></div></aside></div>}
+      {mobileOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="Cerrar navegación" onClick={()=>setMobileOpen(false)} className="absolute inset-0 bg-[#111815]/55 backdrop-blur-sm"/><aside className="absolute inset-y-0 right-0 w-[min(86vw,320px)] overflow-y-auto bg-[#111815] p-5 text-white shadow-2xl"><div className="flex items-center justify-between border-b border-white/10 pb-5"><div className="flex items-center gap-2.5"><div className="grid size-9 place-items-center rounded-xl bg-white text-[#30382f]"><Layers3 size={18}/></div><span className="font-semibold">Teluria</span></div><button aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)} className="grid size-9 place-items-center rounded-xl border border-white/10 text-white/70"><X size={17}/></button></div><nav className="mt-6 space-y-2">{navigation.map((item)=>{const Icon=item.icon;const active=item.match(pathname);return <Link key={item.label} href={item.href} onClick={()=>setMobileOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm ${active ? "bg-white/10 text-white" : "text-white/55"}`}><Icon size={17} className={active ? "text-[#ff8755]" : ""}/>{item.label}</Link>;})}<div className="my-4 border-t border-white/10"/><Link href="/support" onClick={()=>setMobileOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-white/55"><HelpCircle size={17}/> Centro de ayuda</Link><Link href="/preferences" onClick={()=>setMobileOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-white/55"><Settings size={17}/> Preferencias</Link><Link href="/profile" onClick={()=>setMobileOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-white/55"><UserRound size={17}/> Mi perfil</Link></nav></aside></div>}
 
       <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-10 lg:py-9 xl:px-12">{children}</main>
     </div>

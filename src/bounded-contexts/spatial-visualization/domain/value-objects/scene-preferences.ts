@@ -7,6 +7,9 @@ export type LightingPreset = "Day" | "Sunset" | "Night";
 /** Camera arrangements understood by the Spatial Visualization context. */
 export type CameraPreset = "Isometric" | "Top" | "Walkthrough";
 
+/** Semantic layer selected in the 3D studio. */
+export type ModelViewMode = "Architecture" | "Structure";
+
 /** Rectangular wall fragment ready for consumption by a 3D rendering adapter. */
 export interface SceneWallSegment {
   id: string;

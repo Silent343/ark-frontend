@@ -131,6 +131,18 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 .quake-active { animation: quake .23s ease-in-out infinite; }
 
+html[data-theme="dark"] body,
+html[data-theme="dark"] main { color: #edf2ed; background-color: #171d19; }
+html[data-theme="dark"] main section { border-color: #38423b !important; background-color: #202722 !important; }
+html[data-theme="dark"] main h1,
+html[data-theme="dark"] main h2,
+html[data-theme="dark"] main h3,
+html[data-theme="dark"] main label { color: #f0f3ef; }
+html[data-theme="dark"] main input,
+html[data-theme="dark"] main select,
+html[data-theme="dark"] main textarea { border-color: #465148 !important; background-color: #171d19 !important; color: #edf2ed !important; }
+html[data-density="compact"] main section { --density-scale: .88; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, Gauge, Pause, Play, RotateCcw, Timer, Waves, Wind } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, Eye, EyeOff, Gauge, Layers3, Pause, Play, RotateCcw, Timer, Waves, Wind } from "lucide-react";
 import { BuildingScene } from "@/bounded-contexts/spatial-visualization";
+import type { ModelViewMode } from "@/bounded-contexts/spatial-visualization";
 import { calculateVisualResponse } from "@/bounded-contexts/seismic-simulation/application/use-cases/calculate-visual-response";
 import { useProjectWorkspace } from "@/composition/presentation/hooks/use-project-workspace";
 import { ErrorState, PageHeader, Panel, Skeleton } from "@/shared/presentation/components/ui";
@@ -16,6 +17,8 @@ export function SimulationScreen({ projectId }: { projectId: string }) {
   const [direction,setDirection] = useState<"X"|"Y">("X");
   const [running,setRunning] = useState(false);
   const [elapsed,setElapsed] = useState(0);
+  const [showStressZones,setShowStressZones] = useState(true);
+  const [viewMode,setViewMode] = useState<ModelViewMode>("Architecture");
 
   useEffect(()=>{
     if (!running) return;
@@ -38,6 +41,11 @@ export function SimulationScreen({ projectId }: { projectId: string }) {
   if (error || !data) return <ErrorState message={error ?? "No project data was returned."} onRetry={reload}/>;
 
   const reset = () => { setRunning(false); setElapsed(0); };
+  const floorResponses = Array.from({length:Math.min(data.project.floors,6)},(_,index)=>{
+    const floorRatio=index/Math.max(Math.min(data.project.floors,6)-1,1);
+    const demand=intensity/10*1.05+(1-floorRatio)*.34;
+    return demand>=.72 ? {label:"Elevada",color:"#ef3d32",bg:"#fee8e5"} : demand>=.54 ? {label:"Moderada",color:"#d77916",bg:"#fff0d8"} : {label:"Baja",color:"#2f8f62",bg:"#e6f5ec"};
+  });
   return (
     <div className="mx-auto max-w-[1600px]">
       <PageHeader eyebrow={`Simulación · ${data.project.name}`} title="Respuesta sísmica visual" description="Explora cómo varían el movimiento lateral y los indicadores referenciales al ajustar parámetros de excitación." actions={<Link href={`/projects/${projectId}/model`} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9ddd4] bg-[#fbfbf7] px-3.5 text-xs font-semibold"><ArrowLeft size={14}/> Volver al modelo</Link>}/>
@@ -52,9 +60,11 @@ export function SimulationScreen({ projectId }: { projectId: string }) {
         </aside>
 
         <section className="space-y-5">
-          <Panel className="overflow-hidden"><div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-[#dfe2d9] px-4 py-3"><div className="flex items-center gap-2"><span className={`size-2 rounded-full ${running ? "animate-pulse bg-[#ff6a2b]" : "bg-[#8d9791]"}`}/><span className="font-mono text-[10px] font-semibold uppercase tracking-[.14em]">Respuesta del modelo · Eje {direction}</span></div><span className="rounded-lg px-2.5 py-1 text-[9px] font-semibold" style={{color:response.color,background:response.bg}}>Respuesta {response.label.toLowerCase()}</span></div><div className="relative h-[52vh] min-h-[430px]"><BuildingScene blueprint={data.blueprint} floors={data.project.floors} material="Concrete" lighting="Day" cameraPreset="Isometric" showRoof simulation={{active:running,intensity,direction}}/><div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-white/40 bg-[#111815]/75 px-3 py-2 font-mono text-[9px] uppercase tracking-wider text-white backdrop-blur">Movimiento amplificado para visualización</div></div></Panel>
+          <Panel className="overflow-hidden"><div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-[#dfe2d9] px-4 py-3"><div className="flex items-center gap-2"><span className={`size-2 rounded-full ${running ? "animate-pulse bg-[#ff6a2b]" : "bg-[#8d9791]"}`}/><span className="font-mono text-[10px] font-semibold uppercase tracking-[.14em]">Respuesta del modelo · Eje {direction}</span></div><div className="flex flex-wrap items-center gap-2"><div className="flex rounded-lg border border-[#dce0d8] bg-white p-1"><button onClick={()=>setViewMode("Architecture")} className={`grid size-7 place-items-center rounded-md ${viewMode === "Architecture" ? "bg-[#30382f] text-white" : "text-[#7b8781]"}`} aria-label="Ver arquitectura"><Building2 size={13}/></button><button onClick={()=>setViewMode("Structure")} className={`grid size-7 place-items-center rounded-md ${viewMode === "Structure" ? "bg-[#0d1830] text-white" : "text-[#7b8781]"}`} aria-label="Ver estructura portante"><Layers3 size={13}/></button></div><button onClick={()=>setShowStressZones((value)=>!value)} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[9px] font-semibold ${showStressZones ? "border-[#e8a198] bg-[#fff1ee] text-[#b63e32]" : "border-[#dce0d8] bg-white text-[#718078]"}`}>{showStressZones ? <Eye size={13}/> : <EyeOff size={13}/>} Zonas</button><span className="rounded-lg px-2.5 py-1 text-[9px] font-semibold" style={{color:response.color,background:response.bg}}>Respuesta {response.label.toLowerCase()}</span></div></div><div className="relative h-[52vh] min-h-[430px]"><BuildingScene blueprint={data.blueprint} floors={data.project.floors} material="Concrete" lighting="Day" cameraPreset="Isometric" modelViewMode={viewMode} showRoof simulation={{active:running,intensity,direction,showStressZones:showStressZones && elapsed > 0}}/><div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-white/40 bg-[#111815]/75 px-3 py-2 font-mono text-[9px] uppercase tracking-wider text-white backdrop-blur">Deformación amplificada por nivel · visualización educativa</div>{showStressZones && elapsed > 0 && <div className="pointer-events-none absolute right-4 top-4 rounded-xl border border-white/40 bg-[#111815]/80 p-3 text-white backdrop-blur"><p className="font-mono text-[8px] uppercase tracking-wider text-white/60">Mapa de respuesta</p><div className="mt-2 flex gap-3 text-[8px]"><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-[#35b977]"/> Baja</span><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-[#ff9d2e]"/> Moderada</span><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-[#ef3d32]"/> Elevada</span></div></div>}</div></Panel>
 
           <div className="grid gap-4 sm:grid-cols-3"><Metric icon={Wind} label="Desplazamiento máximo" value={`${displacement} mm`} color={response.color}/><Metric icon={Gauge} label="Deriva por piso" value={drift} color={response.color}/><Metric icon={Waves} label="Nivel de respuesta" value={response.label} color={response.color}/></div>
+
+          <Panel className="p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold">Distribución visual por nivel</h2><p className="mt-1 text-[10px] text-[#7f8a84]">La demanda cromática se concentra en los niveles inferiores y cambia con la intensidad.</p></div><span className="font-mono text-[9px] uppercase tracking-wider text-[#8a948f]">No es una verificación normativa</span></div><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{floorResponses.map((floor,index)=><div key={index} className="flex items-center gap-3 rounded-xl border border-[#e0e3dc] bg-white p-3"><span className="grid size-8 place-items-center rounded-lg text-[10px] font-bold" style={{color:floor.color,background:floor.bg}}>{index+1}</span><div className="flex-1"><p className="text-[10px] font-semibold">Nivel {index+1}</p><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#eceee8]"><div className="h-full rounded-full" style={{width:`${Math.max(24,100-index*12)}%`,background:floor.color}}/></div></div><span className="text-[9px] font-semibold" style={{color:floor.color}}>{floor.label}</span></div>)}</div></Panel>
 
           <Panel className="p-5"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Historial de desplazamiento</h2><p className="mt-1 text-[10px] text-[#7f8a84]">Señal sintética para presentación visual</p></div><Timer size={16} className="text-[#7a8680]"/></div><div className="mt-4 overflow-hidden rounded-xl border border-[#e0e3dc] bg-[#f7f7f3] fine-grid"><svg viewBox="0 0 600 170" className="h-44 w-full"><line x1="0" y1="85" x2="600" y2="85" stroke="#aeb6af" strokeDasharray="4 6"/><polyline points={points} fill="none" stroke={response.color} strokeWidth="3" vectorEffect="non-scaling-stroke"/><path d={`M${elapsed/duration*600} 0V170`} stroke="#ff6a2b" strokeWidth="1.5" opacity=".7"/></svg></div><div className="mt-2 flex justify-between font-mono text-[8px] text-[#949d98]"><span>0 s</span><span>{Math.round(duration/2)} s</span><span>{duration} s</span></div></Panel>
         </section>
