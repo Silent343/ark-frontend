@@ -7,6 +7,8 @@ import { Activity, BoxSelect, Building2, Check, CircleGauge, Eye, EyeOff, Footpr
 import type { CameraPreset, LightingPreset, MaterialPreset, ModelViewMode } from "@/bounded-contexts/spatial-visualization/presentation/components/building-scene";
 import { useProjectWorkspace } from "@/composition/presentation/hooks/use-project-workspace";
 import { ErrorState, PageHeader, Panel, Skeleton } from "@/shared/presentation/components/ui";
+import { GlobalSiteSelector } from "@/bounded-contexts/site-planning/presentation/components/global-site-selector";
+import type { ConstructionSiteSelection } from "@/bounded-contexts/site-planning/public";
 
 const BuildingScene = dynamic(() => import("@/bounded-contexts/spatial-visualization/presentation/components/building-scene").then((module)=>module.BuildingScene), { ssr: false, loading: () => <Skeleton className="h-full w-full rounded-none"/> });
 
@@ -23,7 +25,9 @@ export function ModelScreen({ projectId }: { projectId: string }) {
   const [camera,setCamera] = useState<CameraPreset>("Isometric");
   const [viewMode,setViewMode] = useState<ModelViewMode>("Architecture");
   const [showRoof,setShowRoof] = useState(false);
+  const [showTerrain,setShowTerrain] = useState(true);
   const [isolatedLevel,setIsolatedLevel] = useState<number|"All">("All");
+  const [siteSelection,setSiteSelection] = useState<ConstructionSiteSelection | null>(null);
   if (loading) return <ModelSkeleton/>;
   if (error || !data) return <ErrorState message={error ?? "No project data was returned."} onRetry={reload}/>;
   const levelCount=Math.max(1,data.blueprint.levels.length);
@@ -31,10 +35,20 @@ export function ModelScreen({ projectId }: { projectId: string }) {
   return (
     <div className="mx-auto max-w-[1600px]">
       <PageHeader eyebrow={`Modelo 3D · ${data.project.name}`} title="Estudio espacial" description="Navega el modelo generado desde el plano semántico, compara acabados y prepara una presentación arquitectónica." actions={<Link href={`/projects/${projectId}/simulation`} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#ff6a2b] px-4 text-xs font-semibold text-white"><Activity size={15}/> Simular sismo</Link>}/>
-      <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
-        <Panel className="overflow-hidden">
-          <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-[#dfe2d9] px-4 py-3"><div className="flex items-center gap-2"><span className="size-2 animate-pulse rounded-full bg-[#4d9a6a]"/><span className="font-mono text-[10px] font-semibold uppercase tracking-[.14em]">Render en tiempo real</span></div><button onClick={()=>setShowRoof((value)=>!value)} className="inline-flex items-center gap-2 rounded-lg border border-[#dce0d8] bg-white px-2.5 py-1.5 text-[10px] font-semibold">{showRoof ? <Eye size={13}/> : <EyeOff size={13}/>} Techo</button></div>
-          <div className="relative h-[66vh] min-h-[560px]"><BuildingScene blueprint={data.blueprint} floors={levelCount} material={material} lighting={lighting} cameraPreset={camera} modelViewMode={viewMode} showRoof={showRoof} isolatedLevel={isolatedLevel}/><div className="pointer-events-none absolute left-4 top-4 rounded-xl border border-white/40 bg-[#111815]/75 px-3 py-2 font-mono text-[9px] uppercase tracking-wider text-white backdrop-blur">{camera === "Walkthrough" ? "Haz clic para entrar · WASD · apunta y haz clic en una puerta · Esc" : "Órbita · rueda para zoom · arrastra para rotar"}</div><div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-white/40 bg-white/75 px-3 py-2 text-[10px] font-semibold text-[#3f4a44] backdrop-blur">{viewMode === "Structure" ? "Estructura portante · vigas · columnas · nodos" : `${levelCount} ${levelCount===1?"nivel":"niveles"} · ${data.blueprint.rooms.length} ambientes · ${data.blueprint.walls.length} muros`}</div></div>
+      <div className="mt-6"><GlobalSiteSelector projectId={projectId} onSelectionChange={setSiteSelection}/></div>
+      <div className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
+        <Panel className="self-start overflow-hidden">
+          <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-[#dfe2d9] px-4 py-3">
+            <div className="flex items-center gap-2"><span className="size-2 animate-pulse rounded-full bg-[#4d9a6a]"/><span className="font-mono text-[10px] font-semibold uppercase tracking-[.14em]">Render en tiempo real</span></div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#dce0d8] bg-white px-3 text-[10px] font-semibold transition hover:border-[#b8c0b6]">
+                <input type="checkbox" checked={showTerrain} onChange={(event)=>setShowTerrain(event.target.checked)} className="size-4 accent-[#2563eb]"/>
+                Mostrar terreno
+              </label>
+              <button onClick={()=>setShowRoof((value)=>!value)} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce0d8] bg-white px-3 text-[10px] font-semibold">{showRoof ? <Eye size={13}/> : <EyeOff size={13}/>} Techo</button>
+            </div>
+          </div>
+          <div className="relative h-[66vh] min-h-[560px]"><BuildingScene blueprint={data.blueprint} floors={levelCount} material={material} lighting={lighting} cameraPreset={camera} modelViewMode={viewMode} showRoof={showRoof} isolatedLevel={isolatedLevel} siteSelection={showTerrain ? siteSelection??undefined : undefined}/><div className="pointer-events-none absolute left-4 top-4 rounded-xl border border-white/40 bg-[#111815]/75 px-3 py-2 font-mono text-[9px] uppercase tracking-wider text-white backdrop-blur">{camera === "Walkthrough" ? "Haz clic para entrar · WASD · apunta y haz clic en una puerta · Esc" : "Órbita · rueda para zoom · arrastra para rotar"}</div><div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-white/40 bg-white/75 px-3 py-2 text-[10px] font-semibold text-[#3f4a44] backdrop-blur">{viewMode === "Structure" ? "Estructura portante · vigas · columnas · nodos" : `${levelCount} ${levelCount===1?"nivel":"niveles"} · ${data.blueprint.rooms.length} ambientes · ${data.blueprint.walls.length} muros${showTerrain&&siteSelection?` · lote ${siteSelection.lotAreaM2} m²`:""}`}</div></div>
         </Panel>
 
         <aside className="space-y-5">

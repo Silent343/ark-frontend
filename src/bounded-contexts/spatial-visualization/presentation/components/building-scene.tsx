@@ -5,6 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Grid, OrbitControls, PerspectiveCamera, PointerLockControls, Sky } from "@react-three/drei";
 import { MathUtils, Vector3, type Group, type MeshStandardMaterialParameters } from "three";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
+import type { ConstructionSiteSelection } from "@/bounded-contexts/site-planning/public";
 import { buildSceneModel } from "@/bounded-contexts/spatial-visualization/application/use-cases/build-scene-model";
 import type { CameraPreset, LightingPreset, MaterialPreset, ModelViewMode } from "@/bounded-contexts/spatial-visualization/domain/value-objects/scene-preferences";
 
@@ -19,7 +20,13 @@ interface BuildingSceneProps {
   modelViewMode?: ModelViewMode;
   showRoof: boolean;
   isolatedLevel?: number | "All";
+  siteSelection?: ConstructionSiteSelection;
   simulation?: { active: boolean; intensity: number; direction: "X" | "Y"; showStressZones?: boolean };
+}
+
+function LotTerrain({selection}:{selection:ConstructionSiteSelection}) {
+  const width=MathUtils.clamp(selection.lotWidthM,8,48);const depth=MathUtils.clamp(selection.lotDepthM,8,48);const footprint=Math.min(Math.sqrt(selection.buildableAreaM2),width*.9,depth*.9);
+  return <group position-y={-.19}><mesh receiveShadow rotation-x={-Math.PI/2}><planeGeometry args={[width,depth]}/><meshStandardMaterial color="#638165" roughness={1}/></mesh><mesh rotation-x={-Math.PI/2} position-y={.012}><planeGeometry args={[footprint,footprint]}/><meshStandardMaterial color="#d98b55" transparent opacity={.38} roughness={.95}/></mesh></group>;
 }
 
 const materialMap: Record<MaterialPreset, MeshStandardMaterialParameters> = {
@@ -174,8 +181,9 @@ export function BuildingScene(props: BuildingSceneProps) {
       <ambientLight intensity={structural ? .62 : night ? .32 : .72} color={structural ? "#7fa7d9" : night ? "#7d98c5" : "#fff6e8"}/>
       <directionalLight castShadow position={sunset ? [-7,6,-5] : [8,12,7]} intensity={night ? .45 : 2.1} color={sunset ? "#ff9a58" : "#fff8e8"} shadow-mapSize={[1024,1024]}/>
       {night && <pointLight position={[0,5,1]} intensity={26} distance={14} color="#ffbe78"/>}
+      {props.siteSelection&&<LotTerrain selection={props.siteSelection}/>} 
       <Building blueprint={props.blueprint} floors={props.floors} material={props.material} modelViewMode={modelViewMode} showRoof={props.showRoof} simulation={props.simulation} isolatedLevel={props.isolatedLevel} interactive={props.cameraPreset==="Walkthrough"}/>
-      <Grid infiniteGrid fadeDistance={32} fadeStrength={3} cellSize={.5} sectionSize={2.5} cellColor={structural ? "#153149" : night ? "#36434a" : "#aeb7af"} sectionColor={structural ? "#20547b" : night ? "#53636a" : "#828e84"} position={[0,-.17,0]}/>
+      <Grid infiniteGrid fadeDistance={32} fadeStrength={3} cellSize={.5} sectionSize={2.5} cellColor={structural ? "#153149" : night ? "#36434a" : "#aeb7af"} sectionColor={structural ? "#20547b" : night ? "#53636a" : "#828e84"} position={[0,-.2,0]}/>
       <ContactShadows position={[0,-.15,0]} opacity={night ? .25 : .42} scale={24} blur={2.5} far={15}/>
       {props.cameraPreset==="Walkthrough"?<WalkthroughController width={scene.width} depth={scene.depth}/>:<OrbitControls makeDefault enableDamping dampingFactor={.08} minDistance={3.5} maxDistance={48} maxPolarAngle={Math.PI/2.03} target={[0,Math.min(cameraFloors,6)*1.35,0]}/>}
     </Canvas>

@@ -3,7 +3,7 @@
 import { useRef, type MouseEvent, type PointerEvent } from "react";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization/domain/entities/blueprint";
 
-export type EditorTool = "select" | "wall" | "door" | "window" | "column" | "delete";
+export type EditorTool = "select" | "pan" | "room" | "wall" | "door" | "window" | "column" | "delete";
 export type ResizeHandle = "n"|"ne"|"e"|"se"|"s"|"sw"|"w"|"nw"|"start"|"end";
 
 interface BlueprintCanvasProps {
@@ -31,8 +31,9 @@ export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overla
     const rect = event.currentTarget.getBoundingClientRect();
     onCanvasClick(((event.clientX - rect.left) / rect.width) * blueprint.width, ((event.clientY - rect.top) / rect.height) * blueprint.height);
   };
-  const select = (event: MouseEvent, id: string) => { event.stopPropagation(); onSelect?.(id); };
+  const select = (event: MouseEvent, id: string) => { if(tool==="pan")return;event.stopPropagation(); onSelect?.(id); };
   const startDrag = (event: PointerEvent<SVGElement>, id: string) => {
+    if(tool==="pan")return;
     event.stopPropagation();
     onSelect?.(id);
     if (tool !== "select" || !onMove) return;
@@ -72,7 +73,7 @@ export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overla
   const openingGeometry=selectedOpening?(()=>{const angle=selectedOpening.rotation*Math.PI/180;const dx=Math.cos(angle)*selectedOpening.width/2;const dy=Math.sin(angle)*selectedOpening.width/2;return{id:selectedOpening.id,x1:selectedOpening.x-dx,y1:selectedOpening.y-dy,x2:selectedOpening.x+dx,y2:selectedOpening.y+dy};})():null;
 
   return (
-    <svg viewBox={`0 0 ${blueprint.width} ${blueprint.height}`} onClick={handleCanvasClick} onPointerMove={moveSelection} onPointerUp={stopDrag} onPointerCancel={stopDrag} className={`h-full w-full touch-none ${tool !== "select" && tool !== "delete" ? "cursor-crosshair" : "cursor-default"}`} role="img" aria-label="Editable architectural floor plan">
+    <svg viewBox={`0 0 ${blueprint.width} ${blueprint.height}`} onClick={handleCanvasClick} onPointerMove={moveSelection} onPointerUp={stopDrag} onPointerCancel={stopDrag} className={`h-full w-full touch-none ${tool === "pan" ? "cursor-grab" : tool !== "select" && tool !== "delete" ? "cursor-crosshair" : "cursor-default"}`} role="img" aria-label="Editable architectural floor plan">
       <defs>
         <pattern id="smallGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#cdd2ca" strokeWidth=".7" opacity=".5"/></pattern>
         <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#smallGrid)"/><path d="M100 0H0V100" fill="none" stroke="#afb7ad" strokeWidth="1" opacity=".5"/></pattern>
