@@ -20,7 +20,7 @@
       "updatedAt": "2026-08-08",
       "structureType": "Reinforced concrete",
       "status": "Ready",
-      "floors": 2,
+      "floors": 1,
       "floorHeight": 2.8,
       "soilType": "Dense sand",
       "thumbnailVariant": "blueprint",
@@ -127,8 +127,7 @@
     "height": 760,
     "scale": "1:100",
     "levels": [
-      { "id": "level-1", "name": "Ground floor", "elevation": 0 },
-      { "id": "level-2", "name": "Second floor", "elevation": 2.8 }
+      { "id": "level-1", "name": "Ground floor", "elevation": 0 }
     ],
     "rooms": [
       { "id": "room-living", "name": "Living / Dining", "x": 120, "y": 96, "width": 500, "height": 310, "area": 36.8 },

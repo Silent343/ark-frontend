@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ContactShadows, Grid, OrbitControls, PerspectiveCamera, Sky } from "@react-three/drei";
-import type { Group, MeshStandardMaterialParameters } from "three";
+import { ContactShadows, Grid, OrbitControls, PerspectiveCamera, PointerLockControls, Sky } from "@react-three/drei";
+import { MathUtils, Vector3, type Group, type MeshStandardMaterialParameters } from "three";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
 import { buildSceneModel } from "@/bounded-contexts/spatial-visualization/application/use-cases/build-scene-model";
 import type { CameraPreset, LightingPreset, MaterialPreset, ModelViewMode } from "@/bounded-contexts/spatial-visualization/domain/value-objects/scene-preferences";
@@ -18,14 +18,15 @@ interface BuildingSceneProps {
   cameraPreset: CameraPreset;
   modelViewMode?: ModelViewMode;
   showRoof: boolean;
+  isolatedLevel?: number | "All";
   simulation?: { active: boolean; intensity: number; direction: "X" | "Y"; showStressZones?: boolean };
 }
 
 const materialMap: Record<MaterialPreset, MeshStandardMaterialParameters> = {
-  Concrete: { color: "#d5d2c9", roughness: .82, metalness: .03 },
-  Brick: { color: "#a95e43", roughness: .9, metalness: 0 },
-  Wood: { color: "#98704c", roughness: .76, metalness: 0 },
-  Glass: { color: "#b8d9dc", roughness: .18, metalness: .05, transparent: true, opacity: .72 },
+  Concrete: { color: "#d5d2c9", roughness: .82, metalness: .03, transparent: false, opacity: 1, depthWrite: true },
+  Brick: { color: "#a95e43", roughness: .9, metalness: 0, transparent: false, opacity: 1, depthWrite: true },
+  Wood: { color: "#98704c", roughness: .76, metalness: 0, transparent: false, opacity: 1, depthWrite: true },
+  Glass: { color: "#b8d9dc", roughness: .18, metalness: .05, transparent: true, opacity: .58, depthWrite: false },
 };
 
 function responseColor(floor: number, floors: number, intensity: number) {
@@ -42,15 +43,24 @@ function CameraController({ preset, floors, modelViewMode }: { preset: CameraPre
     const height = Math.min(floors, 6) * 2.85;
     const distance = Math.max(12, height * 1.35);
     const positions: Record<CameraPreset, [number, number, number]> = { Isometric: [distance*.8,Math.max(9,height*.72),distance], Top: [0,Math.max(18,height+10),.01], Walkthrough: [0,2.1,8] };
-    camera.position.set(...positions[preset]); camera.lookAt(0,modelViewMode === "Structure" ? height*.48 : Math.min(2.8,height*.42),0); camera.updateProjectionMatrix();
+    camera.position.set(...positions[preset]); camera.lookAt(0,preset==="Walkthrough"?1.7:modelViewMode === "Structure" ? height*.48 : Math.min(2.8,height*.42),0); camera.updateProjectionMatrix();
   }, [camera,floors,modelViewMode,preset]);
   return null;
 }
 
-function Building({ blueprint, floors, material, showRoof, simulation, modelViewMode = "Architecture" }: Omit<BuildingSceneProps,"lighting"|"cameraPreset">) {
+function WalkthroughController({width,depth}:{width:number;depth:number}){
+  const {camera}=useThree(); const cameraRef=useRef(camera); const keys=useRef(new Set<string>());
+  const forward=useRef(new Vector3()); const right=useRef(new Vector3()); const up=useRef(new Vector3(0,1,0));
+  useEffect(()=>{const down=(event:KeyboardEvent)=>keys.current.add(event.code);const release=(event:KeyboardEvent)=>keys.current.delete(event.code);window.addEventListener("keydown",down);window.addEventListener("keyup",release);return()=>{window.removeEventListener("keydown",down);window.removeEventListener("keyup",release);};},[]);
+  useFrame((_,delta)=>{const walkCamera=cameraRef.current;walkCamera.getWorldDirection(forward.current);forward.current.y=0;forward.current.normalize();right.current.crossVectors(forward.current,up.current).normalize();const speed=Math.min(delta,.05)*3.4;if(keys.current.has("KeyW"))walkCamera.position.addScaledVector(forward.current,speed);if(keys.current.has("KeyS"))walkCamera.position.addScaledVector(forward.current,-speed);if(keys.current.has("KeyD"))walkCamera.position.addScaledVector(right.current,speed);if(keys.current.has("KeyA"))walkCamera.position.addScaledVector(right.current,-speed);walkCamera.position.x=MathUtils.clamp(walkCamera.position.x,-width/2-2,width/2+2);walkCamera.position.z=MathUtils.clamp(walkCamera.position.z,-depth/2-2,depth/2+2);walkCamera.position.y=1.7;});
+  return <PointerLockControls makeDefault/>;
+}
+
+function Building({ blueprint, floors, material, showRoof, simulation, modelViewMode = "Architecture", isolatedLevel = "All", interactive = false }: Omit<BuildingSceneProps,"lighting"|"cameraPreset"> & { interactive?: boolean }) {
   const floorGroups = useRef<Array<Group | null>>([]);
   const roofGroup = useRef<Group>(null);
   const finish = materialMap[material];
+  const [openDoors,setOpenDoors]=useState<Set<string>>(new Set());
   const normalizedFloors = Math.min(floors, 6);
   const scene = useMemo(() => buildSceneModel.execute(blueprint), [blueprint]);
   const structuralPoints = useMemo(() => {
@@ -84,7 +94,7 @@ function Building({ blueprint, floors, material, showRoof, simulation, modelView
 
   return (
     <group>
-      {Array.from({length:normalizedFloors}).map((_,floor)=>{const zoneColor=simulation?.showStressZones ? responseColor(floor,normalizedFloors,simulation.intensity) : undefined;return <group key={floor} ref={(node)=>{floorGroups.current[floor]=node;}} position-y={floor*2.85}>
+      {Array.from({length:normalizedFloors}).map((_,floor)=>{if(isolatedLevel!=="All"&&floor!==isolatedLevel-1)return null;const zoneColor=simulation?.showStressZones ? responseColor(floor,normalizedFloors,simulation.intensity) : undefined;return <group key={floor} ref={(node)=>{floorGroups.current[floor]=node;}} position-y={isolatedLevel==="All"?floor*2.85:0}>
         {modelViewMode === "Architecture" ? <>
         <mesh receiveShadow position={[0,-.08,0]}><boxGeometry args={[scene.width+.2,.16,scene.depth+.2]}/><meshStandardMaterial color={zoneColor ?? "#c4c5bd"} roughness={.95} emissive={zoneColor ?? "#000000"} emissiveIntensity={zoneColor ? .1 : 0}/></mesh>
         {blueprint.rooms.map((room, roomIndex)=>{
@@ -92,13 +102,13 @@ function Building({ blueprint, floors, material, showRoof, simulation, modelView
           const color=roomName.includes("garden") ? "#789164" : roomName.includes("garage") ? "#b48e72" : roomName.includes("bath") ? "#d8ddd8" : roomIndex % 2 === 0 ? "#d8d5cb" : "#cecfc7";
           return <mesh key={`${floor}-${room.id}-finish`} receiveShadow position={[(room.x+room.width/2-scene.centerX)/scene.scale,.012,(room.y+room.height/2-scene.centerY)/scene.scale]}><boxGeometry args={[Math.max(.05,(room.width-18)/scene.scale),.025,Math.max(.05,(room.height-18)/scene.scale)]}/><meshStandardMaterial color={color} roughness={.88}/></mesh>;
         })}
-        {scene.wallSegments.map((wall)=><mesh key={`${floor}-${wall.id}`} castShadow receiveShadow position={[wall.x,wall.y,wall.z]} rotation-y={wall.rotation}><boxGeometry args={[wall.length,wall.height,wall.thickness]}/><meshStandardMaterial {...finish} color={zoneColor ?? finish.color} emissive={zoneColor ?? "#000000"} emissiveIntensity={zoneColor ? .12 : 0}/></mesh>)}
+        {scene.wallSegments.map((wall)=><mesh key={`${floor}-${wall.id}`} castShadow receiveShadow position={[wall.x,wall.y,wall.z]} rotation-y={wall.rotation}><boxGeometry args={[wall.length,wall.height,wall.thickness]}/><meshStandardMaterial key={`${material}-${wall.id}`} {...finish} color={zoneColor ?? finish.color} emissive={zoneColor ?? "#000000"} emissiveIntensity={zoneColor ? .12 : 0}/></mesh>)}
         {blueprint.columns.map((column)=><mesh key={`${floor}-${column.id}`} castShadow position={[(column.x-scene.centerX)/scene.scale,1.4,(column.y-scene.centerY)/scene.scale]}><boxGeometry args={[column.size/scene.scale,2.8,column.size/scene.scale]}/><meshStandardMaterial color={zoneColor ?? "#69716a"} roughness={.75}/></mesh>)}
-        {scene.openings.map((opening)=><OpeningAssembly key={`${floor}-${opening.id}`} opening={opening}/>) }
+        {scene.openings.map((opening)=>{const doorKey=`${floor}-${opening.id}`;return <OpeningAssembly key={doorKey} opening={opening} interactive={interactive} open={openDoors.has(doorKey)} onToggle={()=>setOpenDoors((current)=>{const next=new Set(current);if(next.has(doorKey))next.delete(doorKey);else next.add(doorKey);return next;})}/>;}) }
         {blueprint.stairs?.map((stair)=><SpiralStair key={`${floor}-${stair.id}`} x={(stair.x-scene.centerX)/scene.scale} z={(stair.y-scene.centerY)/scene.scale} radius={stair.radius/scene.scale}/>)}
         </> : <StructuralLevel scene={scene} points={structuralPoints} floor={floor} zoneColor={zoneColor}/>}
       </group>})}
-      {showRoof && modelViewMode === "Architecture" && <group ref={roofGroup}><mesh castShadow position={[0,normalizedFloors*2.85+.05,0]}><boxGeometry args={[scene.width+.34,.18,scene.depth+.34]}/><meshStandardMaterial color="#777d75" roughness={.88}/></mesh></group>}
+      {showRoof && isolatedLevel === "All" && modelViewMode === "Architecture" && <group ref={roofGroup}><mesh castShadow position={[0,normalizedFloors*2.85+.05,0]}><boxGeometry args={[scene.width+.34,.18,scene.depth+.34]}/><meshStandardMaterial color="#777d75" roughness={.88}/></mesh></group>}
     </group>
   );
 }
@@ -118,7 +128,16 @@ function SpiralStair({ x, z, radius }: { x: number; z: number; radius: number })
   return <group position={[x,0,z]}><mesh castShadow position={[0,1.35,0]}><cylinderGeometry args={[.055,.055,2.7,14]}/><meshStandardMaterial color="#4b4f4a" metalness={.45} roughness={.45}/></mesh>{Array.from({length:steps}).map((_,index)=>{const angle=-Math.PI*.85+(index/(steps-1))*Math.PI*1.7;const stepWidth=radius*.92;return <mesh key={index} castShadow position={[Math.cos(angle)*radius*.48,.14+index*.16,Math.sin(angle)*radius*.48]} rotation-y={-angle}><boxGeometry args={[stepWidth,.07,radius*.34]}/><meshStandardMaterial color="#a89b88" roughness={.72}/></mesh>;})}<mesh castShadow position={[0,2.5,0]}><torusGeometry args={[radius,.035,8,48,Math.PI*1.7]}/><meshStandardMaterial color="#4b4f4a" metalness={.5} roughness={.4}/></mesh></group>;
 }
 
-function OpeningAssembly({ opening }: { opening: ReturnType<typeof buildSceneModel.execute>["openings"][number] }) {
+function DoorLeaf({width,height,open,interactive,onToggle}:{width:number;height:number;open:boolean;interactive:boolean;onToggle:()=>void}){
+  const group=useRef<Group>(null); const [hovered,setHovered]=useState(false);
+  useFrame(()=>{if(group.current)group.current.rotation.y=MathUtils.lerp(group.current.rotation.y,open?-Math.PI/2:-.06,.16);});
+  return <group ref={group} position={[-width/2+.035,height/2,0]} onClick={(event)=>{if(!interactive)return;event.stopPropagation();onToggle();}} onPointerOver={()=>interactive&&setHovered(true)} onPointerOut={()=>setHovered(false)}>
+    <mesh castShadow position={[width/2,0,0]}><boxGeometry args={[width-.08,height-.08,.055]}/><meshStandardMaterial color={hovered?"#b48860":"#8a6a4d"} emissive={hovered?"#51311b":"#000000"} emissiveIntensity={hovered ? .22 : 0} roughness={.76}/></mesh>
+    <mesh position={[width-.16,0,.045]}><sphereGeometry args={[.035,12,12]}/><meshStandardMaterial color="#c8a76e" metalness={.55} roughness={.3}/></mesh>
+  </group>;
+}
+
+function OpeningAssembly({ opening, interactive, open, onToggle }: { opening: ReturnType<typeof buildSceneModel.execute>["openings"][number]; interactive:boolean; open:boolean; onToggle:()=>void }) {
   const frameColor = opening.type === "window" ? "#52666a" : "#59483b";
   const frameThickness = .075;
   const centerY = opening.sillHeight + opening.height / 2;
@@ -131,10 +150,7 @@ function OpeningAssembly({ opening }: { opening: ReturnType<typeof buildSceneMod
         <mesh position={[0,centerY,0]}><boxGeometry args={[Math.max(.05,opening.width-.1),opening.height-.1,.035]}/><meshPhysicalMaterial color="#9cc7d3" transmission={.72} transparent opacity={.48} roughness={.08}/></mesh>
         <mesh position={[0,opening.sillHeight,0]}><boxGeometry args={[opening.width+.08,.08,.22]}/><meshStandardMaterial color={frameColor} roughness={.68}/></mesh>
         <mesh position={[0,centerY,.015]}><boxGeometry args={[.045,opening.height-.12,.05]}/><meshStandardMaterial color={frameColor}/></mesh>
-      </> : <group position={[-opening.width/2+.035,opening.height/2,0]} rotation-y={-.16}>
-        <mesh castShadow position={[opening.width/2,0,0]}><boxGeometry args={[opening.width-.08,opening.height-.08,.055]}/><meshStandardMaterial color="#8a6a4d" roughness={.76}/></mesh>
-        <mesh position={[opening.width-.16,0,.045]}><sphereGeometry args={[.035,12,12]}/><meshStandardMaterial color="#c8a76e" metalness={.55} roughness={.3}/></mesh>
-      </group>}
+      </> : <DoorLeaf width={opening.width} height={opening.height} open={open} interactive={interactive} onToggle={onToggle}/>}
     </group>
   );
 }
@@ -145,21 +161,23 @@ export function BuildingScene(props: BuildingSceneProps) {
   const sunset = props.lighting === "Sunset";
   const modelViewMode = props.modelViewMode ?? "Architecture";
   const structural = modelViewMode === "Structure";
+  const scene=useMemo(()=>buildSceneModel.execute(props.blueprint),[props.blueprint]);
+  const cameraFloors=props.isolatedLevel&&props.isolatedLevel!=="All"?1:props.floors;
   const background = structural ? "#050b17" : night ? "#11181b" : sunset ? "#e7c7a9" : "#e9eeeb";
   return (
     <Canvas shadows dpr={[1,1.6]} gl={{ antialias: true }}>
       <color attach="background" args={[background]}/>
       <fog attach="fog" args={[background,18,structural ? 52 : 38]}/>
       <PerspectiveCamera makeDefault fov={42} position={[11,9,12]}/>
-      <CameraController preset={props.cameraPreset} floors={props.floors} modelViewMode={modelViewMode}/>
+      <CameraController preset={props.cameraPreset} floors={cameraFloors} modelViewMode={modelViewMode}/>
       {!night && !structural && <Sky distance={450000} sunPosition={sunset ? [-5,2,-4] : [6,8,5]} turbidity={sunset ? 8 : 4} rayleigh={sunset ? 2.6 : 1.2}/>}
       <ambientLight intensity={structural ? .62 : night ? .32 : .72} color={structural ? "#7fa7d9" : night ? "#7d98c5" : "#fff6e8"}/>
       <directionalLight castShadow position={sunset ? [-7,6,-5] : [8,12,7]} intensity={night ? .45 : 2.1} color={sunset ? "#ff9a58" : "#fff8e8"} shadow-mapSize={[1024,1024]}/>
       {night && <pointLight position={[0,5,1]} intensity={26} distance={14} color="#ffbe78"/>}
-      <Building blueprint={props.blueprint} floors={props.floors} material={props.material} modelViewMode={modelViewMode} showRoof={props.showRoof} simulation={props.simulation}/>
+      <Building blueprint={props.blueprint} floors={props.floors} material={props.material} modelViewMode={modelViewMode} showRoof={props.showRoof} simulation={props.simulation} isolatedLevel={props.isolatedLevel} interactive={props.cameraPreset==="Walkthrough"}/>
       <Grid infiniteGrid fadeDistance={32} fadeStrength={3} cellSize={.5} sectionSize={2.5} cellColor={structural ? "#153149" : night ? "#36434a" : "#aeb7af"} sectionColor={structural ? "#20547b" : night ? "#53636a" : "#828e84"} position={[0,-.17,0]}/>
       <ContactShadows position={[0,-.15,0]} opacity={night ? .25 : .42} scale={24} blur={2.5} far={15}/>
-      <OrbitControls makeDefault enableDamping dampingFactor={.08} minDistance={3.5} maxDistance={48} maxPolarAngle={Math.PI/2.03} target={[0,Math.min(props.floors,6)*1.35,0]}/>
+      {props.cameraPreset==="Walkthrough"?<WalkthroughController width={scene.width} depth={scene.depth}/>:<OrbitControls makeDefault enableDamping dampingFactor={.08} minDistance={3.5} maxDistance={48} maxPolarAngle={Math.PI/2.03} target={[0,Math.min(cameraFloors,6)*1.35,0]}/>}
     </Canvas>
   );
 }

@@ -6,6 +6,7 @@ export interface WorkspaceAdministrationRepository {
   saveProfile(profile: WorkspaceProfile): Promise<WorkspaceProfile>;
   getPreferences(): Promise<WorkspacePreferences>;
   savePreferences(preferences: WorkspacePreferences): Promise<WorkspacePreferences>;
+  resetPreferences(): Promise<WorkspacePreferences>;
   getSupportCenter(): Promise<SupportCenter>;
   submitTicket(input: Pick<SupportTicket, "category" | "message">): Promise<SupportTicket>;
 }

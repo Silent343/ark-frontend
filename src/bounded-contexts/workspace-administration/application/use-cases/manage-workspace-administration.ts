@@ -21,6 +21,11 @@ export class SaveWorkspacePreferences {
   execute(preferences: WorkspacePreferences) { return this.repository.savePreferences(preferences); }
 }
 
+export class ResetWorkspacePreferences {
+  constructor(private readonly repository: WorkspaceAdministrationRepository) {}
+  execute() { return this.repository.resetPreferences(); }
+}
+
 export class GetSupportCenter {
   constructor(private readonly repository: WorkspaceAdministrationRepository) {}
   execute() { return this.repository.getSupportCenter(); }

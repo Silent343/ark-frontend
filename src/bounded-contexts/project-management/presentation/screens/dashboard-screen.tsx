@@ -6,6 +6,7 @@ import { ArrowRight, Box, CalendarDays, CheckCircle2, Clock3, FileScan, MapPin, 
 import type { Project, ProjectStatus } from "@/bounded-contexts/project-management/domain/entities/project";
 import { useProjects } from "@/bounded-contexts/project-management/presentation/hooks/use-projects";
 import { PageHeader, Panel, Skeleton, ErrorState } from "@/shared/presentation/components/ui";
+import { selectActiveProject } from "@/shared/presentation/hooks/use-active-project";
 
 const statusStyles: Record<ProjectStatus, string> = {
   Ready: "bg-[#e2f2e9] text-[#27704d]",
@@ -45,7 +46,7 @@ function ProjectThumbnail({ project }: { project: Project }) {
 
 function ProjectCard({ project }: { project: Project }) {
   return (
-    <Link href={`/projects/${project.id}/editor`} className="group overflow-hidden rounded-2xl border border-[#dfe2d9] bg-[#fbfbf7] transition duration-300 hover:-translate-y-1 hover:border-[#bfc6ba] hover:shadow-[0_16px_38px_rgba(17,24,21,.09)]">
+    <Link href={`/projects/${project.id}/editor`} onClick={()=>selectActiveProject(project.id)} className="group overflow-hidden rounded-2xl border border-[#dfe2d9] bg-[#fbfbf7] transition duration-300 hover:-translate-y-1 hover:border-[#bfc6ba] hover:shadow-[0_16px_38px_rgba(17,24,21,.09)]">
       <ProjectThumbnail project={project} />
       <div className="p-5">
         <div className="flex items-start justify-between gap-3">

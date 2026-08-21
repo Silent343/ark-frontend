@@ -22,13 +22,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { CreateProjectInput } from "@/bounded-contexts/project-management/domain/entities/project";
-import { projectManagement } from "@/bounded-contexts/project-management/public";
+import { createProjectWorkspace } from "@/composition/application/create-project-workspace";
 import { PageHeader, Panel } from "@/shared/presentation/components/ui";
 
 const initialForm: CreateProjectInput = {
   name: "",
   location: "Lima, Perú",
-  floors: 2,
+  floors: 1,
   floorHeight: 2.8,
   structureType: "Reinforced concrete",
   soilType: "Dense sand",
@@ -71,7 +71,7 @@ export function CreateProjectScreen() {
       setAnalysisStep(step);
       await new Promise((resolve) => window.setTimeout(resolve, 720));
     }
-    const project = await projectManagement.createProject.execute(form);
+    const project = await createProjectWorkspace.execute(form);
     router.push(`/projects/${project.id}/editor`);
   };
 

@@ -35,6 +35,10 @@ export class JsonWorkspaceAdministrationRepository implements WorkspaceAdministr
   async saveProfile(profile: WorkspaceProfile) { window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile)); return profile; }
   async getPreferences() { return this.readLocal<WorkspacePreferences>(PREFERENCES_STORAGE_KEY) ?? (await this.getDatabase()).workspaceAdministration.preferences; }
   async savePreferences(preferences: WorkspacePreferences) { window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences)); return preferences; }
+  async resetPreferences() {
+    window.localStorage.removeItem(PREFERENCES_STORAGE_KEY);
+    return (await this.getDatabase()).workspaceAdministration.preferences;
+  }
   async getSupportCenter() { return (await this.getDatabase()).workspaceAdministration.support; }
 
   async submitTicket(input: Pick<SupportTicket, "category" | "message">) {
