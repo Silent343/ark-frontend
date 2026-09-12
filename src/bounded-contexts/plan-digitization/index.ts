@@ -9,3 +9,4 @@ export type {
   Wall,
 } from "./domain/entities/blueprint";
 export { planDigitization } from "./public";
+export {validateSharedBlueprint} from "./domain/blueprint-rules";

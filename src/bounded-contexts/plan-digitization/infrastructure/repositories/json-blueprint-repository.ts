@@ -1,45 +1,83 @@
-import type { BlueprintRepository } from "@/bounded-contexts/plan-digitization/application/ports/blueprint-repository";
-import type { Blueprint } from "@/bounded-contexts/plan-digitization/domain/entities/blueprint";
-
-interface LocalPlanDatabase { blueprint: Blueprint; blueprints?: Blueprint[]; }
-
-/** JSON adapter for the Plan Digitization prototype. */
+import type { BlueprintRepository } from "../../application/ports/blueprint-repository";
+import type { Blueprint } from "../../domain/entities/blueprint";
+import { requestJson } from "@/shared/infrastructure/rest-client";
+interface StoredPlan {
+  id: string;
+  updated_at: string;
+  geometry: Blueprint;
+}
+/** Shares semantic geometry through REST with optimistic revision checks and explicit local migration. */
 export class JsonBlueprintRepository implements BlueprintRepository {
-  private databasePromise: Promise<LocalPlanDatabase> | null = null;
-
-  private getDatabase() {
-    if (!this.databasePromise) {
-      this.databasePromise = fetch("/db.json").then(async (response) => {
-        if (!response.ok) throw new Error("The local blueprint database could not be loaded.");
-        return (await response.json()) as LocalPlanDatabase;
-      });
-    }
-    return this.databasePromise;
+  private revisions = new Map<string, StoredPlan>();
+  private saves = new Map<string, Promise<void>>();
+  private url(id: string) {
+    return "/api/v1/projects/" + encodeURIComponent(id) + "/blueprints";
   }
-
   async findByProjectId(projectId: string): Promise<Blueprint> {
-    const database = await this.getDatabase();
-    const localBlueprint = this.readLocalBlueprint(projectId);
-    if (localBlueprint) return localBlueprint;
-    const matchedBlueprint = database.blueprints?.find((blueprint) => blueprint.projectId === projectId);
-    if (matchedBlueprint) return matchedBlueprint;
-    return { ...database.blueprint, projectId };
+    const rows = await requestJson<StoredPlan[]>(this.url(projectId));
+    this.saves.delete(projectId);
+    if (rows[0]) {
+      this.revisions.set(projectId, rows[0]);
+      return rows[0].geometry;
+    }
+    const seed = (await fetch("/db.json").then((r) => r.json())) as {
+      blueprint: Blueprint;
+      blueprints?: Blueprint[];
+    };
+    const project = await requestJson<{ role: string }>(
+      this.url(projectId).replace("/blueprints", ""),
+    );
+    const local =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("teluria.blueprint.v2." + projectId)
+        : null;
+    let blueprint = {
+      ...(seed.blueprints?.find((p) => p.projectId === projectId) ??
+        seed.blueprint),
+      projectId,
+    };
+    // Only the project owner may import pre-authentication browser data into the shared workspace.
+    if (local && project.role === "owner") {
+      try {
+        blueprint = JSON.parse(local) as Blueprint;
+      } catch {
+        /* The untouched local value remains available for recovery. */
+      }
+    }
+    if (project.role !== "client") {
+      try {
+        const row = await requestJson<StoredPlan>(this.url(projectId), {
+          method: "POST",
+          body: JSON.stringify({ geometry: blueprint }),
+        });
+        this.revisions.set(projectId, row);
+      } catch (error) {
+        const latest = await requestJson<StoredPlan[]>(this.url(projectId));
+        if (!latest[0]) throw error;
+        this.revisions.set(projectId, latest[0]);
+        return latest[0].geometry;
+      }
+    }
+    return blueprint;
   }
-
-  async save(blueprint: Blueprint): Promise<void> {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(this.storageKey(blueprint.projectId), JSON.stringify(blueprint));
+  save(blueprint: Blueprint): Promise<void> {
+    const previous = this.saves.get(blueprint.projectId) ?? Promise.resolve();
+    const pending = previous.then(() => this.write(blueprint));
+    this.saves.set(blueprint.projectId, pending);
+    return pending;
   }
-
-  private storageKey(projectId: string) {
-    return `teluria.blueprint.v2.${projectId}`;
-  }
-
-  private readLocalBlueprint(projectId: string): Blueprint | null {
-    if (typeof window === "undefined") return null;
-    const serialized = window.localStorage.getItem(this.storageKey(projectId));
-    if (!serialized) return null;
-    try { return JSON.parse(serialized) as Blueprint; }
-    catch { window.localStorage.removeItem(this.storageKey(projectId)); return null; }
+  private async write(blueprint: Blueprint): Promise<void> {
+    const current = this.revisions.get(blueprint.projectId);
+    const row = await requestJson<StoredPlan>(
+      this.url(blueprint.projectId) + (current ? "/" + current.id : ""),
+      {
+        method: current ? "PATCH" : "POST",
+        headers: current
+          ? { "If-Match": JSON.stringify(current.updated_at) }
+          : {},
+        body: JSON.stringify({ geometry: blueprint }),
+      },
+    );
+    this.revisions.set(blueprint.projectId, row);
   }
 }

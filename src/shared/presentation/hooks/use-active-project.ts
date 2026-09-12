@@ -14,7 +14,8 @@ export function selectActiveProject(projectId:string){
 
 /** Resolves the currently selected project and synchronizes direct project routes. */
 export function useActiveProject(pathname:string){
-  const routeProject=pathname.match(/^\/projects\/([^/]+)\/(?:editor|model|simulation)/)?.[1]??null;
+  const matchedProject=pathname.match(/^\/projects\/([^/]+)(?:\/|$)/)?.[1]??null;
+  const routeProject=matchedProject==="new"?null:matchedProject;
   const storedProject=useSyncExternalStore(
     (notify)=>{window.addEventListener(CHANGE_EVENT,notify);window.addEventListener("storage",notify);return()=>{window.removeEventListener(CHANGE_EVENT,notify);window.removeEventListener("storage",notify);};},
     ()=>window.localStorage.getItem(STORAGE_KEY),

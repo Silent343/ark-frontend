@@ -1,0 +1,609 @@
+/* Collaboration views reuse the workspace tokens for readable light and dark surfaces. */
+.pm-workspace [hidden] {
+  display: none !important;
+}
+.collab-session {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-bottom: 20px;
+  color: var(--pm-text);
+  font-size: 12px;
+}
+.collab-session small {
+  display: block;
+  color: var(--pm-muted);
+  font-size: 10px;
+}
+.collab-auth {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 440px;
+  gap: 7vw;
+  align-items: center;
+  padding: 6vw 9vw;
+  background: var(--pm-bg);
+  color: var(--pm-text);
+}
+.collab-auth-story {
+  max-width: 570px;
+}
+.collab-auth-story > svg {
+  color: var(--pm-accent);
+  margin-bottom: 36px;
+}
+.collab-auth-story h1 {
+  font-size: clamp(38px, 4.5vw, 68px);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.06;
+}
+.collab-auth-story > p:not(.pm-eyebrow) {
+  color: var(--pm-muted);
+  font-size: 18px;
+  line-height: 1.8;
+  margin-top: 26px;
+}
+.collab-auth-points {
+  display: flex;
+  gap: 10px;
+  margin-top: 36px;
+  flex-wrap: wrap;
+}
+.collab-auth-points span {
+  padding: 8px 14px;
+  border: 1px solid var(--pm-border);
+  border-radius: 20px;
+  font-size: 12px;
+}
+.collab-auth-card {
+  padding: 34px;
+  max-width: 100%;
+  width: 440px;
+}
+.collab-auth-card h2 {
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.collab-auth-card > p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--pm-muted);
+  margin: 10px 0 26px;
+}
+.collab-auth input {
+  width: 100%;
+  border: 1px solid var(--pm-border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--pm-surface);
+  color: var(--pm-text);
+}
+.collab-auth .pm-form {
+  gap: 20px;
+}
+.collab-auth .pm-button {
+  width: 100%;
+  min-height: 44px;
+}
+.collab-auth input:focus-visible {
+  outline: 2px solid var(--pm-accent);
+  outline-offset: 2px;
+}
+.collab-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 18px;
+}
+.collab-member,
+.collab-package {
+  padding: 24px;
+}
+.collab-member h2,
+.collab-package h2 {
+  margin-top: 20px;
+}
+.collab-member > p,
+.collab-package > p {
+  color: var(--pm-muted);
+  font-size: 12px;
+  margin: 8px 0 18px;
+  overflow-wrap: anywhere;
+}
+.collab-avatar {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: var(--pm-soft);
+  color: var(--pm-accent);
+  font-weight: 650;
+}
+.collab-workload {
+  padding: 16px 0;
+  font-size: 12px;
+}
+.collab-workload small {
+  display: block;
+  color: var(--pm-muted);
+  margin: 8px 0;
+}
+.pm-progress-track {
+  height: 5px;
+  background: var(--pm-subtle);
+  border-radius: 5px;
+  margin: 12px 0;
+}
+.pm-progress-track > div {
+  height: 100%;
+  background: var(--pm-accent);
+  border-radius: 5px;
+}
+.collab-section {
+  padding: 24px;
+  margin-top: 24px;
+}
+.collab-section > h2 {
+  margin-bottom: 16px;
+}
+.collab-list-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--pm-border);
+  font-size: 12px;
+}
+.collab-list-row:last-child {
+  border-bottom: 0;
+}
+.collab-list-row small,
+.collab-comment small {
+  display: block;
+  color: var(--pm-muted);
+  font-size: 11px;
+  margin-top: 5px;
+}
+.collab-list-row a {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--pm-accent);
+}
+.collab-invite-result {
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.collab-invite-result p {
+  color: var(--pm-muted);
+  font-size: 12px;
+  margin: 8px 0 16px;
+}
+.collab-invite-result input {
+  flex: 1;
+  min-width: 150px;
+}
+.collab-invitation {
+  max-width: 600px;
+  margin: 50px auto;
+  padding: 40px;
+}
+.collab-invitation > p {
+  margin: 20px 0;
+}
+.collab-calendar-wrap {
+  overflow: auto;
+}
+.collab-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(110px, 1fr));
+  min-width: 780px;
+}
+.collab-weekday {
+  padding: 16px;
+  color: var(--pm-muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 650;
+  border-bottom: 1px solid var(--pm-border);
+}
+.collab-day {
+  min-height: 130px;
+  padding: 10px;
+  border-right: 1px solid var(--pm-border);
+  border-bottom: 1px solid var(--pm-border);
+}
+.collab-day > span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pm-muted);
+}
+.collab-day-empty {
+  background: var(--pm-subtle);
+}
+.collab-event {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 6px;
+  margin-top: 5px;
+  border-left: 3px solid var(--pm-accent);
+  border-radius: 4px;
+  font-size: 10px;
+  background: var(--pm-soft);
+  color: var(--pm-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.collab-event-milestone {
+  border-color: #d89030;
+}
+.collab-event-site_visit {
+  border-color: #23a694;
+}
+.collab-gantt {
+  overflow: auto;
+  margin-top: 24px;
+}
+.collab-gantt-row {
+  display: grid;
+  grid-template-columns: 210px minmax(400px, 1fr);
+  gap: 24px;
+  align-items: center;
+  min-width: 650px;
+  border-top: 1px solid var(--pm-border);
+  padding: 17px 0;
+  font-size: 12px;
+}
+.collab-gantt-row small {
+  display: block;
+  font-size: 10px;
+  color: var(--pm-muted);
+  margin-top: 5px;
+}
+.collab-gantt-track {
+  position: relative;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent calc(10% - 1px),
+    var(--pm-border) 10%
+  );
+  height: 36px;
+}
+.collab-gantt-track > div {
+  position: absolute;
+  top: 5px;
+  height: 26px;
+  background: #387be0;
+  border-radius: 5px;
+  color: white;
+  font-size: 10px;
+  padding: 5px;
+  min-width: 20px;
+}
+.collab-gantt-track > .collab-gantt-critical {
+  background: #bb641f;
+}
+.collab-discussions {
+  display: grid;
+  gap: 16px;
+  max-width: 980px;
+}
+.collab-comment {
+  padding: 24px;
+}
+.collab-comment > p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+  font-size: 14px;
+  margin: 20px 0;
+}
+.collab-comment > .pm-actions {
+  color: var(--pm-muted);
+  font-size: 11px;
+}
+.collab-comment a {
+  color: var(--pm-accent);
+}
+.collab-package-files {
+  display: grid;
+  gap: 10px;
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+.collab-package-files > a {
+  color: var(--pm-accent);
+}
+.collab-document-checks {
+  max-height: 260px;
+  overflow: auto;
+}
+.collab-document-checks > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  font-size: 12px;
+}
+.collab-document-checks legend {
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.collab-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin: 12px 0;
+}
+.collab-checkbox input,
+.collab-document-checks input {
+  min-height: 16px !important;
+  width: 16px;
+  accent-color: #2563eb;
+}
+.collab-flex {
+  flex: 1;
+}
+.collab-unread strong {
+  color: var(--pm-accent);
+}
+.collab-change {
+  border-bottom: 1px solid var(--pm-border);
+  padding: 18px 0;
+}
+.collab-change summary {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.collab-change summary > span:nth-child(2) {
+  flex: 1;
+}
+.collab-change small {
+  display: block;
+  color: var(--pm-muted);
+  margin-top: 6px;
+  font-size: 10px;
+}
+.collab-change-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--pm-accent);
+}
+.collab-change code {
+  font-size: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.collab-change .pm-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.collab-overlay {
+  padding-top: 24px;
+}
+.collab-overlay .pm-actions {
+  margin: 16px 0;
+}
+.collab-overlay label {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.collab-overlay-scroll {
+  height: 420px;
+  overflow: auto;
+  background: #f0f2f5;
+}
+.collab-overlay-scroll img {
+  width: 100%;
+}
+.collab-overlay > p {
+  margin: 12px 0;
+}
+.collab-module-select {
+  display: none;
+}
+.collab-quick-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+@media (max-width: 900px) {
+  .collab-auth {
+    grid-template-columns: 1fr;
+    padding: 30px;
+    gap: 28px;
+  }
+  .collab-auth-story h1 {
+    font-size: 38px;
+  }
+  .collab-auth-story > svg,
+  .collab-auth-points {
+    display: none;
+  }
+  .collab-auth-card {
+    width: 100%;
+  }
+  .collab-module-select {
+    display: block;
+    width: 100%;
+    margin-bottom: 16px;
+  }
+  .collab-session {
+    margin-bottom: 24px;
+  }
+  .collab-team-grid {
+    grid-template-columns: 1fr;
+  }
+  .collab-section {
+    padding: 18px;
+  }
+}
+.collab-module-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 24px;
+}
+.collab-module-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  padding: 3px;
+  background: var(--pm-surface);
+}
+.collab-module-group a {
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--pm-muted);
+}
+.collab-module-group a:hover {
+  background: var(--pm-subtle);
+  color: var(--pm-text);
+}
+.collab-module-group a[aria-current="page"] {
+  background: var(--pm-accent);
+  color: white;
+}
+.collab-mobile-nav {
+  display: none;
+}
+@media (max-width: 700px) {
+  .collab-module-nav {
+    display: none;
+  }
+  .collab-mobile-nav {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 18px;
+  }
+}
+
+/* Planning table mirrors an architectural delivery schedule instead of a generic progress list. */
+.collab-plan {
+  overflow: hidden;
+}
+.collab-plan-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+  border-bottom: 1px solid var(--pm-border);
+}
+.collab-plan-heading p {
+  margin-top: 5px;
+  color: var(--pm-muted);
+  font-size: 11px;
+}
+.collab-plan-scroll {
+  overflow-x: auto;
+}
+.collab-plan-table {
+  min-width: max(920px, calc(520px + var(--month-count) * 150px));
+}
+.collab-plan-row {
+  display: grid;
+  grid-template-columns: 280px 170px 130px minmax(
+      calc(var(--month-count) * 150px),
+      1fr
+    );
+  align-items: center;
+  min-height: 76px;
+  border-top: 1px solid var(--pm-border);
+}
+.collab-plan-row:first-child {
+  border-top: 0;
+}
+.collab-plan-row > *:not(.collab-plan-track, .collab-plan-months) {
+  padding: 14px 16px;
+}
+.collab-plan-header {
+  min-height: 48px;
+  background: var(--pm-subtle);
+  color: var(--pm-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+.collab-plan-months {
+  display: grid;
+  grid-template-columns: repeat(var(--month-count), minmax(150px, 1fr));
+  align-self: stretch;
+}
+.collab-plan-months span {
+  display: grid;
+  place-items: center;
+  padding: 12px 8px;
+  border-left: 1px solid var(--pm-border);
+  text-transform: capitalize;
+}
+.collab-plan-deliverable strong,
+.collab-plan-deliverable small {
+  display: block;
+}
+.collab-plan-deliverable strong {
+  font-size: 12px;
+}
+.collab-plan-deliverable small {
+  margin-top: 6px;
+  color: var(--pm-muted);
+  font-size: 9px;
+}
+.collab-plan-assignee {
+  color: var(--pm-muted);
+  font-size: 11px;
+}
+.collab-plan-track {
+  position: relative;
+  align-self: stretch;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent calc((100% / var(--month-count)) - 1px),
+    var(--pm-border) calc(100% / var(--month-count))
+  );
+}
+.collab-plan-bar {
+  position: absolute;
+  top: 50%;
+  height: 12px;
+  min-width: 9px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: #3a73e8;
+  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.04);
+}
+.collab-plan-bar-done {
+  background: #1fb981;
+}
+.collab-plan-bar-todo {
+  background: #93a3b8;
+}
+.collab-plan-bar-review {
+  background: #d49a32;
+}
+.collab-plan-bar-critical {
+  box-shadow: 0 0 0 2px rgba(218, 102, 34, 0.36);
+}
+
+@media (max-width: 700px) {
+  .collab-plan-heading {
+    flex-direction: column;
+  }
+}

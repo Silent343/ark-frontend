@@ -1,61 +1,77 @@
-import type { ProjectRepository } from "@/bounded-contexts/project-management/application/ports/project-repository";
-import type { CreateProjectInput, Project } from "@/bounded-contexts/project-management/domain/entities/project";
+import type { ProjectRepository } from "../../application/ports/project-repository";
+import type {
+  CreateProjectInput,
+  Project,
+} from "../../domain/entities/project";
+import { requestJson } from "@/shared/infrastructure/rest-client";
 
-interface LocalDatabase { projects: Project[]; }
-
-const STORAGE_KEY = "teluria.projects";
-
+/** Explicit anti-corruption mapping for legacy camelCase project consumers. */
+export function projectFromDto(dto: Record<string, unknown>): Project {
+  return {
+    ...dto,
+    updatedAt: String(dto.updated_at),
+    floorHeight: Number(dto.floor_height),
+    structureType: String(dto.structure_type),
+    soilType: String(dto.soil_type),
+    thumbnailVariant: dto.thumbnail_variant as Project["thumbnailVariant"],
+  } as unknown as Project;
+}
+function projectToDto(input: CreateProjectInput) {
+  return {
+    name: input.name,
+    location: input.location,
+    floors: input.floors,
+    floor_height: input.floorHeight,
+    structure_type: input.structureType,
+    soil_type: input.soilType,
+  };
+}
 /**
- * JSON-backed repository for the frontend prototype.
- * User-created projects are layered on the seed file through localStorage.
- * Replace this adapter with an HTTP implementation when FastAPI is available.
+ * Compatibility name retained for existing composition; persistence now uses the local REST API.
+ * Old browser projects are imported once, preserving ids and their locally edited blueprints.
  */
 export class JsonProjectRepository implements ProjectRepository {
-  private databasePromise: Promise<LocalDatabase> | null = null;
-
-  private async getDatabase(): Promise<LocalDatabase> {
-    if (!this.databasePromise) {
-      this.databasePromise = fetch("/db.json").then(async (response) => {
-        if (!response.ok) throw new Error("The local project database could not be loaded.");
-        return (await response.json()) as LocalDatabase;
+  private migration: Promise<void> | null = null;
+  private migrate() {
+    if (typeof window === "undefined") return Promise.resolve();
+    if (!this.migration)
+      this.migration = (async () => {
+        const session=await requestJson<{user:{can_import_legacy?:boolean}|null}>("/api/v1/sessions");
+        if(!session.user?.can_import_legacy)return;
+        const raw = window.localStorage.getItem("teluria.projects");
+        if (!raw) return;
+        const local = JSON.parse(raw) as Project[];
+        const existing =
+          await requestJson<Array<{ id: string }>>("/api/v1/projects");
+        for (const item of local)
+          if (!existing.some((p) => p.id === item.id)) {
+            await requestJson("/api/v1/projects", {
+              method: "POST",
+              body: JSON.stringify({ ...projectToDto(item), id: item.id }),
+            });
+          }
+      })().catch((error) => {
+        this.migration = null;
+        throw error;
       });
-    }
-    return this.databasePromise;
+    return this.migration;
   }
-
-  private getLocalProjects(): Project[] {
-    if (typeof window === "undefined") return [];
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    try {
-      return JSON.parse(raw) as Project[];
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-      return [];
-    }
-  }
-
   async list(): Promise<Project[]> {
-    const database = await this.getDatabase();
-    return [...this.getLocalProjects(), ...database.projects];
+    await this.migrate();
+    return (
+      await requestJson<Record<string, unknown>[]>("/api/v1/projects")
+    ).map(projectFromDto);
   }
-
-  async findById(id: string): Promise<Project | null> {
-    return (await this.list()).find((project) => project.id === id) ?? null;
+  async findById(id: string) {
+    return (await this.list()).find((p) => p.id === id) ?? null;
   }
-
   async create(input: CreateProjectInput): Promise<Project> {
-    const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    const project: Project = {
-      ...input,
-      id: `${slug}-${Date.now()}`,
-      updatedAt: new Date().toISOString().slice(0, 10),
-      status: "Ready",
-      thumbnailVariant: "blueprint",
-      progress: 100,
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([project, ...this.getLocalProjects()]));
-    return project;
+    await this.migrate();
+    return projectFromDto(
+      await requestJson("/api/v1/projects", {
+        method: "POST",
+        body: JSON.stringify(projectToDto(input)),
+      }),
+    );
   }
-
 }

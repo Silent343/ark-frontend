@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./workspace.css";
+import "./collaboration.css";
+import {AuthProvider} from "@/bounded-contexts/identity-access/presentation/auth-provider";
 import { AppShell } from "@/shared/presentation/components/app-shell";
 import { ErrorBoundary } from "@/shared/presentation/components/error-boundary";
 import { PreferencesBootstrap } from "@/bounded-contexts/workspace-administration/presentation/components/preferences-bootstrap";
@@ -22,7 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <I18nProvider>
           <PreferencesBootstrap />
           <ErrorBoundary>
-            <AppShell>{children}</AppShell>
+            <AuthProvider><AppShell>{children}</AppShell></AuthProvider>
           </ErrorBoundary>
         </I18nProvider>
       </body>

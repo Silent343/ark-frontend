@@ -5,3 +5,4 @@ export type {
   ProjectThumbnailVariant,
 } from "./domain/entities/project";
 export { projectManagement } from "./public";
+export { ProjectRules } from "./domain/project-rules";

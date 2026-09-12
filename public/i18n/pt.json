@@ -137,5 +137,22 @@
   "site.depth": "Profundidade (m)",
   "site.totalArea": "Área total",
   "site.buildableArea": "Superfície a construir",
-  "site.confirm": "Confirmar terreno"
+  "site.confirm": "Confirmar terreno",
+  "editor.previewTitle": "Visualização da planta 2D",
+  "editor.previewDescription": "Revise a distribuição geral antes de entrar no espaço de edição.",
+  "editor.openEditor": "Abrir editor",
+  "editor.expandAndEdit": "Expandir e editar",
+  "editor.exitEditor": "Sair do editor",
+  "editor.projectParticipants": "Participantes do projeto",
+  "editor.activeParticipants": "Participantes do projeto",
+  "editor.noParticipants": "Ainda não há participantes visíveis.",
+  "editor.viewTeam": "Ver equipe",
+  "model.previewTitle": "Visualização do modelo 3D",
+  "model.previewDescription": "Explore o volume geral antes de entrar no estúdio de materiais, níveis e ambiente.",
+  "model.openStudio": "Abrir estúdio 3D",
+  "model.navigablePreview": "Visualização navegável",
+  "model.expandAndConfigure": "Expandir e configurar",
+  "model.exitStudio": "Sair do estúdio",
+  "model.rooms": "ambientes",
+  "model.walls": "paredes"
 }

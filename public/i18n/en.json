@@ -137,5 +137,22 @@
   "site.depth": "Depth (m)",
   "site.totalArea": "Total area",
   "site.buildableArea": "Construction footprint",
-  "site.confirm": "Confirm lot"
+  "site.confirm": "Confirm lot",
+  "editor.previewTitle": "2D plan preview",
+  "editor.previewDescription": "Review the overall layout before entering the editing workspace.",
+  "editor.openEditor": "Open editor",
+  "editor.expandAndEdit": "Expand and edit",
+  "editor.exitEditor": "Exit editor",
+  "editor.projectParticipants": "Project participants",
+  "editor.activeParticipants": "Project participants",
+  "editor.noParticipants": "No participants are visible yet.",
+  "editor.viewTeam": "View team",
+  "model.previewTitle": "3D model preview",
+  "model.previewDescription": "Explore the overall volume before entering the materials, levels and environment studio.",
+  "model.openStudio": "Open 3D studio",
+  "model.navigablePreview": "Navigable preview",
+  "model.expandAndConfigure": "Expand and configure",
+  "model.exitStudio": "Exit studio",
+  "model.rooms": "rooms",
+  "model.walls": "walls"
 }
