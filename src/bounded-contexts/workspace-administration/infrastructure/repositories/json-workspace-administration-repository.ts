@@ -5,9 +5,9 @@ interface WorkspaceDatabase {
   workspaceAdministration: { profile: WorkspaceProfile; preferences: WorkspacePreferences; support: SupportCenter };
 }
 
-const PROFILE_STORAGE_KEY = "teluria.workspace-profile";
-const PREFERENCES_STORAGE_KEY = "teluria.workspace-preferences";
-const TICKETS_STORAGE_KEY = "teluria.support-tickets";
+const PROFILE_STORAGE_KEY = "ark.workspace-profile";
+const PREFERENCES_STORAGE_KEY = "ark.workspace-preferences";
+const TICKETS_STORAGE_KEY = "ark.support-tickets";
 
 /** JSON seed adapter with browser persistence for editable prototype state. */
 export class JsonWorkspaceAdministrationRepository implements WorkspaceAdministrationRepository {

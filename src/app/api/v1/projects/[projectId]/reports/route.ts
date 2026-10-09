@@ -129,7 +129,7 @@ export async function GET(
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition":
-          'attachment; filename="teluria-project-report.pdf"',
+          'attachment; filename="ark-project-report.pdf"',
         "Cache-Control": "no-store",
       },
     });

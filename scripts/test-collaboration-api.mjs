@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { PDFDocument } from "pdf-lib";
-const base = process.env.TELURIA_TEST_URL ?? "http://127.0.0.1:3010";
+const base = process.env.ARK_TEST_URL ?? "http://127.0.0.1:3010";
 const password = "QA-only-passphrase-2026";
 const stamp = Date.now();
 async function api(
@@ -32,12 +32,12 @@ function expect(result, status) {
 }
 const probe = await api("/sessions");
 assert.equal(
-  probe.headers.get("x-teluria-test-mode"),
+  probe.headers.get("x-ark-test-mode"),
   "1",
   "Refusing to write outside isolated QA storage.",
 );
 async function account(label) {
-  const email = label + "-" + stamp + "@teluria.test";
+  const email = label + "-" + stamp + "@ark.test";
   const response = await api("/users", {
     method: "POST",
     body: { email, password, name: "QA " + label },

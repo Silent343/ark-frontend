@@ -19,7 +19,7 @@ export async function renderProjectReport(report: ProjectReport) {
     height: 84,
     color: rgb(0.07, 0.13, 0.23),
   });
-  page.drawText("TELURIA", {
+  page.drawText("ARK", {
     x: 40,
     y: 806,
     size: 11,
@@ -69,7 +69,7 @@ export async function renderProjectReport(report: ProjectReport) {
     y -= 16;
   }
   doc.getPages().forEach((p, index) =>
-    p.drawText("Teluria | " + (index + 1) + " / " + doc.getPageCount(), {
+    p.drawText("Ark | " + (index + 1) + " / " + doc.getPageCount(), {
       x: 40,
       y: 27,
       size: 9,

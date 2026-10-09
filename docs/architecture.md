@@ -1,6 +1,6 @@
-# Teluria frontend architecture
+# Ark frontend architecture
 
-Teluria uses explicit bounded contexts. Clean Architecture layers live **inside** each context instead of being global application folders.
+Ark uses explicit bounded contexts. Clean Architecture layers live **inside** each context instead of being global application folders.
 
 ## Stage 2 contexts
 
@@ -64,7 +64,7 @@ bounded-contexts/<context>/
 
 Management uses `/api/v1/projects` and project-scoped REST resources. Composition joins domain validators, authenticated membership, document-version relationships, audit recording and response semantics. `kernel/infrastructure/workspace-store.ts` uses native SQLite transactions, WAL and a busy timeout; a compatibility facade remains under composition. Do not import session/server modules into client bundles.
 
-`data/workspace-db.json` is the versioned seed. `.data/teluria.sqlite` is the writable database; the former `.data/workspace-db.json` is imported once and preserved. SQLite envelope columns are indexed, aggregate payloads are validated JSON, and email/membership uniqueness is enforced in SQL. Project DTOs map snake_case fields into legacy camelCase design consumers through an explicit anti-corruption mapper. Legacy repository names remain for compatibility; project and blueprint transports now use HTTP.
+`data/workspace-db.json` is the versioned seed. `.data/ark.sqlite` is the writable database; the former `.data/workspace-db.json` is imported once and preserved. SQLite envelope columns are indexed, aggregate payloads are validated JSON, and email/membership uniqueness is enforced in SQL. Project DTOs map snake_case fields into legacy camelCase design consumers through an explicit anti-corruption mapper. Legacy repository names remain for compatibility; project and blueprint transports now use HTTP.
 
 The existing `public/db.json` remains the seed for independent design and administration adapters:
 

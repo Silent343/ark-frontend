@@ -7,13 +7,17 @@ export class CreateProjectWorkspace {
   async execute(input: CreateProjectInput) {
     const project = await projectManagement.createProject.execute(input);
     const seed = await planDigitization.getBlueprint.execute(project.id);
+    const basements = Math.max(0, Math.min(10, Math.floor(input.basements ?? 0)));
     const levels = Array.from(
-      { length: Math.max(1, input.floors) },
-      (_, index) => ({
-        id: `level-${index + 1}`,
-        name: index === 0 ? "Ground floor" : `Floor ${index + 1}`,
-        elevation: index * input.floorHeight,
-      }),
+      { length: Math.max(1, input.floors) + basements },
+      (_, index) => {
+        const floor = index - basements;
+        return {
+          id: floor < 0 ? `basement-${-floor}` : `level-${floor + 1}`,
+          name: floor < 0 ? `Sótano ${-floor}` : `Piso ${floor + 1}`,
+          elevation: floor * input.floorHeight,
+        };
+      },
     );
     await planDigitization.saveBlueprint.execute({
       ...seed,

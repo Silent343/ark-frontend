@@ -2,8 +2,8 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 
-const STORAGE_KEY="teluria.active-project";
-const CHANGE_EVENT="teluria:active-project-change";
+const STORAGE_KEY="ark.active-project";
+const CHANGE_EVENT="ark:active-project-change";
 
 /** Stores the workspace selection without coupling navigation to Project Management internals. */
 export function selectActiveProject(projectId:string){

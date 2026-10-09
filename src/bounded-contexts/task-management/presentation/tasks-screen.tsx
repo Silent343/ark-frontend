@@ -9,7 +9,7 @@ import {
 import { ResourceDialog } from "@/composition/presentation/resource-dialog";
 import { Status, dateLabel } from "@/composition/presentation/workspace-ui";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
-/** Kanban offers keyboard-accessible status selectors as an alternative to drag-and-drop. */
+/** Kanban offers drag-and-drop plus keyboard-accessible status selectors for the same workflow. */
 export function TasksScreen() {
   const { data, mutate, busy } = useWorkspace();
   const { t, locale } = useI18n();
@@ -27,7 +27,7 @@ export function TasksScreen() {
       <header className="pm-page-heading">
         <div>
           <p className="pm-eyebrow">{t("pm.execution")}</p>
-          <h1>{t("pm.tasks")}</h1>
+          <h1>{t("pm.kanban")}</h1>
           <p>{t("pm.tasksHelp")}</p>
         </div>
         <button
@@ -63,6 +63,7 @@ export function TasksScreen() {
           <div
             key={status}
             className="pm-kanban-column"
+            data-status={status}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();

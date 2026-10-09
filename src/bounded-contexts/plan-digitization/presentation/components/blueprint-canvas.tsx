@@ -3,7 +3,7 @@
 import { useRef, type MouseEvent, type PointerEvent } from "react";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization/domain/entities/blueprint";
 
-export type EditorTool = "select" | "pan" | "room" | "wall" | "door" | "window" | "column" | "delete";
+export type EditorTool = "select" | "pan" | "room" | "wall" | "door" | "window" | "column" | "roof" | "service" | "delete";
 export type ResizeHandle = "n"|"ne"|"e"|"se"|"s"|"sw"|"w"|"nw"|"start"|"end";
 
 interface BlueprintCanvasProps {
@@ -17,10 +17,11 @@ interface BlueprintCanvasProps {
   onMoveStart?: () => void;
   onResize?: (id:string,handle:ResizeHandle,deltaX:number,deltaY:number)=>void;
   onResizeStart?:()=>void;
+  onInteractionEnd?: () => void;
 }
 
 /** Semantic SVG plan shared by editor and comparison views. */
-export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overlayOpacity = 0, onSelect, onCanvasClick, onMove, onMoveStart, onResize, onResizeStart }: BlueprintCanvasProps) {
+export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overlayOpacity = 0, onSelect, onCanvasClick, onMove, onMoveStart, onResize, onResizeStart, onInteractionEnd }: BlueprintCanvasProps) {
   const drag = useRef<{ id: string; x: number; y: number; mode:"move"|"resize"; handle?:ResizeHandle } | null>(null);
   const toPlanPoint = (event: { clientX: number; clientY: number; currentTarget: SVGSVGElement }) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -58,13 +59,18 @@ export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overla
     else if(drag.current.handle)onResize?.(drag.current.id,drag.current.handle,deltaX,deltaY);
     drag.current = { ...drag.current, ...point };
   };
-  const stopDrag = () => { drag.current = null; };
+  const stopDrag = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    onInteractionEnd?.();
+  };
   const selectedRoom=blueprint.rooms.find((item)=>item.id===selectedId);
+  const selectedRoof=blueprint.roofs?.find((item)=>item.id===selectedId);
   const selectedColumn=blueprint.columns.find((item)=>item.id===selectedId);
   const selectedStair=blueprint.stairs?.find((item)=>item.id===selectedId);
   const selectedWall=blueprint.walls.find((item)=>item.id===selectedId);
   const selectedOpening=[...blueprint.windows,...blueprint.doors].find((item)=>item.id===selectedId);
-  const selectedBox=selectedRoom?{x:selectedRoom.x,y:selectedRoom.y,width:selectedRoom.width,height:selectedRoom.height}:selectedColumn?{x:selectedColumn.x-selectedColumn.size/2,y:selectedColumn.y-selectedColumn.size/2,width:selectedColumn.size,height:selectedColumn.size}:selectedStair?{x:selectedStair.x-selectedStair.radius,y:selectedStair.y-selectedStair.radius,width:selectedStair.radius*2,height:selectedStair.radius*2}:null;
+  const selectedBox=selectedRoom?{x:selectedRoom.x,y:selectedRoom.y,width:selectedRoom.width,height:selectedRoom.height}:selectedRoof?{x:selectedRoof.x,y:selectedRoof.y,width:selectedRoof.width,height:selectedRoof.depth}:selectedColumn?{x:selectedColumn.x-selectedColumn.size/2,y:selectedColumn.y-selectedColumn.size/2,width:selectedColumn.size,height:selectedColumn.size}:selectedStair?.type==="spiral"?{x:selectedStair.x-selectedStair.radius,y:selectedStair.y-selectedStair.radius,width:selectedStair.radius*2,height:selectedStair.radius*2}:null;
   const boxHandles:Array<{handle:ResizeHandle;x:number;y:number;cursor:string}>=selectedBox?[
     {handle:"nw",x:selectedBox.x,y:selectedBox.y,cursor:"nwse-resize"},{handle:"n",x:selectedBox.x+selectedBox.width/2,y:selectedBox.y,cursor:"ns-resize"},{handle:"ne",x:selectedBox.x+selectedBox.width,y:selectedBox.y,cursor:"nesw-resize"},
     {handle:"e",x:selectedBox.x+selectedBox.width,y:selectedBox.y+selectedBox.height/2,cursor:"ew-resize"},{handle:"se",x:selectedBox.x+selectedBox.width,y:selectedBox.y+selectedBox.height,cursor:"nwse-resize"},{handle:"s",x:selectedBox.x+selectedBox.width/2,y:selectedBox.y+selectedBox.height,cursor:"ns-resize"},
@@ -80,25 +86,44 @@ export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overla
         <filter id="selectionGlow"><feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#ff6a2b" floodOpacity=".45"/></filter>
       </defs>
       <rect width={blueprint.width} height={blueprint.height} fill="#f8f8f4"/>
-      {blueprint.sourceImage && overlayOpacity > 0 && <image href={blueprint.sourceImage} x="0" y="0" width={blueprint.width} height={blueprint.height} preserveAspectRatio="none" opacity={Math.min(.92, overlayOpacity * 2.35)}/>} 
+      {blueprint.sourceImage && overlayOpacity > 0 && <image href={blueprint.sourceImage} x={blueprint.sourceOffset?.x ?? 0} y={blueprint.sourceOffset?.y ?? 0} width={blueprint.sourceSize?.width ?? blueprint.width} height={blueprint.sourceSize?.height ?? blueprint.height} preserveAspectRatio="none" opacity={Math.min(.92, overlayOpacity * 2.35)}/>}
       <rect width={blueprint.width} height={blueprint.height} fill="url(#grid)" opacity={blueprint.sourceImage ? .35 : 1}/>
 
-      {!blueprint.sourceImage && overlayOpacity > 0 && <g opacity={overlayOpacity} transform="translate(7 4)" stroke="#648aa1" fill="none" strokeDasharray="8 5">
-        {blueprint.walls.map((wall)=><line key={`source-${wall.id}`} x1={wall.start[0]} y1={wall.start[1]} x2={wall.end[0]} y2={wall.end[1]} strokeWidth={wall.thickness + 4}/>)}</g>}
+      {/* A source overlay must come from a real imported file, never offset copies of geometry. */}
 
       <g>
         {blueprint.rooms.map((room)=><g key={room.id} onClick={(event)=>select(event,room.id)} className="cursor-pointer"><rect x={room.x+9} y={room.y+9} width={room.width-18} height={room.height-18} fill={selectedId === room.id ? "#fff0e8" : "#f3f4ee"} fillOpacity={blueprint.sourceImage ? .16 : 1} stroke={selectedId === room.id ? "#ff6a2b" : "transparent"} strokeWidth="3"/><text x={room.x+room.width/2} y={room.y+room.height/2-6} textAnchor="middle" fontSize="17" fontWeight="700" fill="#59645e" stroke={blueprint.sourceImage ? "#ffffff" : "none"} strokeWidth={blueprint.sourceImage ? 4 : 0} paintOrder="stroke" letterSpacing="1.4">{room.name.toUpperCase()}</text><text x={room.x+room.width/2} y={room.y+room.height/2+20} textAnchor="middle" fontSize="12" fill="#56635d" stroke={blueprint.sourceImage ? "#ffffff" : "none"} strokeWidth={blueprint.sourceImage ? 3 : 0} paintOrder="stroke">{room.area} m²</text></g>)}
       </g>
+      <g aria-label="Zonas de cubierta">
+        {blueprint.roofs?.map((roof)=><g key={roof.id} onClick={(event)=>select(event,roof.id)} className="cursor-pointer">
+          <rect x={roof.x} y={roof.y} width={roof.width} height={roof.depth} fill="#467798" fillOpacity=".12" stroke={selectedId===roof.id?"#ff6a2b":"#467798"} strokeDasharray="9 6" strokeWidth="3"/>
+          <text x={roof.x+roof.width/2} y={roof.y+roof.depth/2} textAnchor="middle" fontSize="13" fontWeight="700" fill="#305b72">{roof.name}</text>
+        </g>)}
+      </g>
+      <g aria-label="Puntos de instalaciones">
+        {blueprint.routes?.map((route) => {
+          const from = blueprint.services?.find((point) => point.id === route.fromId);
+          const to = blueprint.services?.find((point) => point.id === route.toId);
+          if (!from || !to) return null;
+          return <line key={route.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+            stroke={route.kind === "plumbing" ? "#1885b5" : "#d59a28"}
+            strokeWidth="5" strokeDasharray="11 7" opacity=".85" />;
+        })}
+        {blueprint.services?.map((point)=><g key={point.id} onClick={(event)=>select(event,point.id)} className="cursor-pointer">
+          <circle cx={point.x} cy={point.y} r="12" fill={["water","drain"].includes(point.kind)?"#1885b5":"#d59a28"} stroke={selectedId===point.id?"#ff6a2b":"white"} strokeWidth="3"/>
+          <text x={point.x+16} y={point.y+4} fontSize="12" fontWeight="700" fill="#37494f" stroke="white" strokeWidth="3" paintOrder="stroke">{point.name}</text>
+        </g>)}
+      </g>
 
       <g strokeLinecap="square">
-        {blueprint.walls.map((wall)=><line key={wall.id} x1={wall.start[0]} y1={wall.start[1]} x2={wall.end[0]} y2={wall.end[1]} stroke={selectedId === wall.id ? "#ff6a2b" : "#303a35"} strokeWidth={wall.thickness} onClick={(event)=>select(event,wall.id)} className="cursor-pointer" filter={selectedId === wall.id ? "url(#selectionGlow)" : undefined}/>) }
+        {blueprint.walls.map((wall)=><line key={wall.id} x1={wall.start[0]} y1={wall.start[1]} x2={wall.end[0]} y2={wall.end[1]} stroke={selectedId === wall.id ? "#ff6a2b" : blueprint.review && !blueprint.review.reviewedIds.includes(wall.id) ? "#ad701e" : "#303a35"} strokeWidth={wall.thickness} onClick={(event)=>select(event,wall.id)} className="cursor-pointer" filter={selectedId === wall.id ? "url(#selectionGlow)" : undefined}/>) }
       </g>
 
       <g>
         {blueprint.windows.map((item)=><g key={item.id} transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`} onClick={(event)=>select(event,item.id)} className="cursor-pointer"><rect x={-item.width/2} y="-9" width={item.width} height="18" fill="#d9edf2" stroke={selectedId === item.id ? "#ff6a2b" : "#357586"} strokeWidth="4"/><line x1={-item.width/2+8} x2={item.width/2-8} stroke="#fff" strokeWidth="3"/></g>)}
         {blueprint.doors.map((item)=><g key={item.id} transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`} onClick={(event)=>select(event,item.id)} className="cursor-pointer"><path d={`M0 0 L${item.width} 0 A${item.width} ${item.width} 0 0 0 0 ${item.width}`} fill="none" stroke={selectedId === item.id ? "#ff6a2b" : "#7b694e"} strokeWidth="5"/><path d={`M0 0 L0 ${item.width}`} stroke="#f8f8f4" strokeWidth="20"/></g>)}
         {blueprint.columns.map((item)=><rect key={item.id} x={item.x-item.size/2} y={item.y-item.size/2} width={item.size} height={item.size} rx="2" fill={selectedId === item.id ? "#ff6a2b" : "#303a35"} onClick={(event)=>select(event,item.id)} className="cursor-pointer"/>)}
-        {blueprint.stairs?.map((stair)=><g key={stair.id} transform={`translate(${stair.x} ${stair.y})`} onClick={(event)=>select(event,stair.id)} className="cursor-pointer"><circle r={stair.radius} fill="#f7f6f0" fillOpacity={blueprint.sourceImage ? .28 : .9} stroke={selectedId === stair.id ? "#ff6a2b" : "#3f4a44"} strokeWidth="4"/>{Array.from({length:14}).map((_,index)=>{const angle=(-Math.PI*.88)+(index/13)*Math.PI*1.72;return <line key={index} x1="0" y1="0" x2={Math.cos(angle)*stair.radius} y2={Math.sin(angle)*stair.radius} stroke="#59645e" strokeWidth="2"/>;})}<circle r="5" fill="#303a35"/></g>)}
+        {blueprint.stairs?.map((stair)=><g key={stair.id} transform={`translate(${stair.x} ${stair.y}) rotate(${stair.type === "straight" ? stair.rotation ?? 0 : 0})`} onClick={(event)=>select(event,stair.id)} className="cursor-pointer">{stair.type === "straight" ? <><rect x={-stair.radius} y={-(stair.length ?? stair.radius*4)/2} width={stair.radius*2} height={stair.length ?? stair.radius*4} fill="#f7f6f0" fillOpacity={blueprint.sourceImage ? .28 : .9} stroke={selectedId === stair.id ? "#ff6a2b" : "#3f4a44"} strokeWidth="4"/>{Array.from({length:12}).map((_,index)=><line key={index} x1={-stair.radius} x2={stair.radius} y1={-(stair.length ?? stair.radius*4)/2+(index+1)*(stair.length ?? stair.radius*4)/13} y2={-(stair.length ?? stair.radius*4)/2+(index+1)*(stair.length ?? stair.radius*4)/13} stroke="#59645e" strokeWidth="2"/>)}</> : <><circle r={stair.radius} fill="#f7f6f0" fillOpacity={blueprint.sourceImage ? .28 : .9} stroke={selectedId === stair.id ? "#ff6a2b" : "#3f4a44"} strokeWidth="4"/>{Array.from({length:14}).map((_,index)=>{const angle=(-Math.PI*.88)+(index/13)*Math.PI*1.72;return <line key={index} x1="0" y1="0" x2={Math.cos(angle)*stair.radius} y2={Math.sin(angle)*stair.radius} stroke="#59645e" strokeWidth="2"/>;})}<circle r="5" fill="#303a35"/></>}</g>)}
       </g>
 
       <g fill="transparent" stroke="transparent" className={tool === "select" ? "cursor-move" : "cursor-pointer"}>
@@ -106,7 +131,9 @@ export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overla
         {blueprint.walls.map((wall)=><line key={`hit-${wall.id}`} x1={wall.start[0]} y1={wall.start[1]} x2={wall.end[0]} y2={wall.end[1]} strokeWidth={Math.max(28,wall.thickness+12)} onPointerDown={(event)=>startDrag(event,wall.id)}/>) }
         {[...blueprint.windows,...blueprint.doors].map((item)=><circle key={`hit-${item.id}`} cx={item.x} cy={item.y} r={Math.max(24,item.width/2)} onPointerDown={(event)=>startDrag(event,item.id)}/>) }
         {blueprint.columns.map((item)=><rect key={`hit-${item.id}`} x={item.x-Math.max(18,item.size/2)} y={item.y-Math.max(18,item.size/2)} width={Math.max(36,item.size)} height={Math.max(36,item.size)} onPointerDown={(event)=>startDrag(event,item.id)}/>) }
-        {blueprint.stairs?.map((stair)=><circle key={`hit-${stair.id}`} cx={stair.x} cy={stair.y} r={stair.radius} onPointerDown={(event)=>startDrag(event,stair.id)}/>) }
+        {blueprint.stairs?.map((stair)=>stair.type === "straight" ? <rect key={`hit-${stair.id}`} x={-stair.radius} y={-(stair.length ?? stair.radius*4)/2} width={stair.radius*2} height={stair.length ?? stair.radius*4} transform={`translate(${stair.x} ${stair.y}) rotate(${stair.rotation ?? 0})`} onPointerDown={(event)=>startDrag(event,stair.id)}/> : <circle key={`hit-${stair.id}`} cx={stair.x} cy={stair.y} r={stair.radius} onPointerDown={(event)=>startDrag(event,stair.id)}/>) }
+        {blueprint.roofs?.map((roof)=><rect key={`hit-${roof.id}`} x={roof.x+12} y={roof.y+12} width={Math.max(1,roof.width-24)} height={Math.max(1,roof.depth-24)} onPointerDown={(event)=>startDrag(event,roof.id)}/>)}
+        {blueprint.services?.map((point)=><circle key={`hit-${point.id}`} cx={point.x} cy={point.y} r="17" onPointerDown={(event)=>startDrag(event,point.id)}/>)}
       </g>
 
       {tool==="select"&&selectedBox&&<g aria-label="Controles de tamaño del elemento seleccionado">

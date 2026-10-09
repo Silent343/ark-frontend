@@ -275,6 +275,7 @@ export async function handleWorkspaceRequest(
           const row = {
             status: "Ready",
             thumbnail_variant: "blueprint",
+            cover_image: "",
             progress: 0,
             phase: "proposal",
             client_name: "",
@@ -307,6 +308,7 @@ export async function handleWorkspaceRequest(
           checkVersion(request, current);
           validateInput(input, projectRules);
           const next = {
+            cover_image: "",
             ...current,
             ...input,
             updated_at: new Date().toISOString(),
@@ -488,8 +490,8 @@ export async function handleWorkspaceRequest(
         headers: {
           "Cache-Control": "no-store",
           // Lets destructive integration tests fail closed outside the isolated QA store.
-          ...(process.env.TELURIA_TEST_MODE === "1"
-            ? { "X-Teluria-Test-Mode": "1" }
+          ...(process.env.ARK_TEST_MODE === "1"
+            ? { "X-Ark-Test-Mode": "1" }
             : {}),
           ...(!Array.isArray(result) && result
             ? { ETag: JSON.stringify((result as StoredRecord).updated_at) }

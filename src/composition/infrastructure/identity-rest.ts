@@ -160,14 +160,14 @@ export async function identityRequest(
         status: method === "POST" && resource === "users" ? 201 : 200,
         headers: {
           "Cache-Control": "no-store",
-          ...(process.env.TELURIA_TEST_MODE === "1"
-            ? { "X-Teluria-Test-Mode": "1" }
+          ...(process.env.ARK_TEST_MODE === "1"
+            ? { "X-Ark-Test-Mode": "1" }
             : {}),
         },
       },
     );
     if (sessionToken || method === "DELETE")
-      response.cookies.set("teluria_session", sessionToken ?? "", {
+      response.cookies.set("ark_session", sessionToken ?? "", {
         httpOnly: true,
         sameSite: "lax",
         secure: new URL(request.url).protocol === "https:",

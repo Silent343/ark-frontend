@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+public/vendor/plan-tools/
 
 # Next.js
 .next/

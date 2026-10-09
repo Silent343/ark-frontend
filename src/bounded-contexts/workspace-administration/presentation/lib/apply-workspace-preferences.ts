@@ -15,5 +15,5 @@ export function applyWorkspacePreferences(preferences: WorkspacePreferences) {
   root.dataset.density = preferences.compactDensity ? "compact" : "comfortable";
   root.dataset.units = preferences.unitSystem.toLowerCase();
   root.dataset.renderQuality = preferences.renderQuality.startsWith("Alta") ? "high" : preferences.renderQuality.startsWith("Baja") ? "low" : "balanced";
-  window.dispatchEvent(new CustomEvent("teluria:preferences-changed", { detail: preferences }));
+  window.dispatchEvent(new CustomEvent("ark:preferences-changed", { detail: preferences }));
 }

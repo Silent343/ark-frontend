@@ -113,7 +113,7 @@ export function CoordinationHeading({
   return (
     <header className="pm-page-heading">
       <div>
-        <p className="pm-eyebrow">TELURIA · COLLABORATION</p>
+        <p className="pm-eyebrow">ARK · COLLABORATION</p>
         <h1>{title}</h1>
         <p>{description}</p>
       </div>

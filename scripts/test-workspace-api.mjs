@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-const base = process.env.TELURIA_TEST_URL ?? "http://127.0.0.1:3010";
+const base = process.env.ARK_TEST_URL ?? "http://127.0.0.1:3010";
 let cookie="";
-/** Run against an isolated server started with TELURIA_TEST_MODE=1. */
+/** Run against an isolated server started with ARK_TEST_MODE=1. */
 async function call(path, method = "GET", body, version) {
   const response = await fetch(base + "/api/v1" + path, {
     method,
@@ -28,11 +28,13 @@ function expected(result, status) {
 // Verify isolation before the first mutation, even if a custom test URL was supplied.
 const probe = await call("/sessions");
 assert.equal(
-  probe.headers.get("x-teluria-test-mode"),
+  probe.headers.get("x-ark-test-mode"),
   "1",
-  "Refusing to write: start the server with TELURIA_TEST_MODE=1.",
+  "Refusing to write: start the server with ARK_TEST_MODE=1.",
 );
-const identity=expected(await call("/users","POST",{name:"QA Architect",email:"qa-"+Date.now()+"@teluria.test",password:"QA-only-passphrase-2026"}),201).user;
+const identity=expected(await call("/users","POST",{name:"QA Architect",email:"qa-"+Date.now()+"@ark.test",password:"QA-only-passphrase-2026"}),201).user;
+const pixel =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3foAAAAASUVORK5CYII=";
 const projectInput = {
   name: "QA architecture " + Date.now(),
   location: "Lima",
@@ -40,8 +42,10 @@ const projectInput = {
   floor_height: 2.8,
   structure_type: "Reinforced concrete",
   soil_type: "Dense sand",
+  cover_image: pixel,
 };
 const project = expected(await call("/projects", "POST", projectInput), 201);
+assert.equal(project.cover_image, pixel);
 const other = expected(
   await call("/projects", "POST", {
     ...projectInput,
@@ -137,8 +141,6 @@ expected(
   }),
   201,
 );
-const pixel =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3foAAAAASUVORK5CYII=";
 const docInput = {
   title: "Plan",
   discipline: "architecture",

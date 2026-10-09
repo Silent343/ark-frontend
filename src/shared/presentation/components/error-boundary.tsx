@@ -13,7 +13,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   static getDerivedStateFromError(): ErrorBoundaryState { return { hasError: true }; }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("Teluria presentation error", error, info.componentStack);
+    console.error("Ark presentation error", error, info.componentStack);
   }
 
   render() {

@@ -14,6 +14,7 @@ export function projectFromDto(dto: Record<string, unknown>): Project {
     structureType: String(dto.structure_type),
     soilType: String(dto.soil_type),
     thumbnailVariant: dto.thumbnail_variant as Project["thumbnailVariant"],
+    coverImage: typeof dto.cover_image === "string" ? dto.cover_image : "",
   } as unknown as Project;
 }
 function projectToDto(input: CreateProjectInput) {
@@ -24,6 +25,7 @@ function projectToDto(input: CreateProjectInput) {
     floor_height: input.floorHeight,
     structure_type: input.structureType,
     soil_type: input.soilType,
+    cover_image: input.coverImage ?? "",
   };
 }
 /**
@@ -36,9 +38,11 @@ export class JsonProjectRepository implements ProjectRepository {
     if (typeof window === "undefined") return Promise.resolve();
     if (!this.migration)
       this.migration = (async () => {
-        const session=await requestJson<{user:{can_import_legacy?:boolean}|null}>("/api/v1/sessions");
-        if(!session.user?.can_import_legacy)return;
-        const raw = window.localStorage.getItem("teluria.projects");
+        const session = await requestJson<{
+          user: { can_import_legacy?: boolean } | null;
+        }>("/api/v1/sessions");
+        if (!session.user?.can_import_legacy) return;
+        const raw = window.localStorage.getItem("ark.projects");
         if (!raw) return;
         const local = JSON.parse(raw) as Project[];
         const existing =

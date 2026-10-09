@@ -17,14 +17,17 @@ import { documents } from "@/bounded-contexts/document-management/public";
 import { createProjectWorkspace } from "@/composition/application/create-project-workspace";
 import { Field } from "@/composition/presentation/workspace-ui";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
+import { ProjectCoverField } from "../components/project-cover-field";
 
 const initialForm: CreateProjectInput = {
   name: "",
   location: "Lima, Perú",
   floors: 1,
+  basements: 0,
   floorHeight: 2.8,
   structureType: "Reinforced concrete",
   soilType: "Dense sand",
+  coverImage: "",
 };
 const structureOptions = [
   "Reinforced concrete",
@@ -49,31 +52,31 @@ export function CreateProjectScreen() {
   const router = useRouter();
   const { t } = useI18n();
   const [form, setForm] = useState(initialForm);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
   const update = (field: keyof CreateProjectInput, value: string | number) =>
     setForm((current) => ({ ...current, [field]: value }));
-  const selectFile = (selected?: File) => {
-    if (!selected || busy) return;
-    if (
-      !["image/png", "image/jpeg", "image/webp", "application/pdf"].includes(
-        selected.type,
-      ) ||
-      selected.size > 3 * 1024 * 1024
-    ) {
+  const selectFiles = (selected: FileList | File[]) => {
+    if (busy || selected.length === 0) return;
+    const incoming = Array.from(selected);
+    if (files.length + incoming.length > 12 || incoming.some((file) =>
+      !["image/png", "image/jpeg", "image/webp", "application/pdf"].includes(file.type) ||
+      file.size > 3 * 1024 * 1024
+    )) {
       setError(t("pm.fileError"));
       return;
     }
     setError("");
-    setFile(selected);
+    setFiles((current) => [...current, ...incoming]);
   };
   const drop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragging(false);
-    selectFile(event.dataTransfer.files[0]);
+    selectFiles(event.dataTransfer.files);
   };
   const create = async (event: FormEvent) => {
     event.preventDefault();
@@ -81,13 +84,16 @@ export function CreateProjectScreen() {
     setError("");
     setBusy(true);
     try {
-      const fileData = file ? await readSource(file) : "";
       // Preserve the created ID if a later upload fails; a retry must not create another project.
       const project = createdProjectId
         ? { id: createdProjectId }
         : await createProjectWorkspace.execute(form);
       setCreatedProjectId(project.id);
-      if (file)
+      const uploaded = new Set(uploadedKeys);
+      for (const file of files) {
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        if (uploaded.has(key)) continue;
+        const fileData = await readSource(file);
         await documents.create(project.id, {
           title: file.name,
           discipline: "architecture",
@@ -99,7 +105,10 @@ export function CreateProjectScreen() {
           notes: "Original project source.",
           previous_version_id: "",
         });
-      router.push(`/projects/${project.id}`);
+        uploaded.add(key);
+        setUploadedKeys([...uploaded]);
+      }
+      router.push(files.length ? `/projects/${project.id}/editor?mode=edit&import=1` : `/projects/${project.id}`);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : t("pm.create.failed"),
@@ -174,6 +183,13 @@ export function CreateProjectScreen() {
                   }
                 />
               </Field>
+              <Field label={t("pm.create.basements")}>
+                <input
+                  required type="number" min={0} max={10} step={1}
+                  value={form.basements ?? 0}
+                  onChange={(e) => update("basements", Number(e.target.value))}
+                />
+              </Field>
               <Field label={t("pm.create.structure")}>
                 <select
                   value={form.structureType}
@@ -199,6 +215,11 @@ export function CreateProjectScreen() {
                 </select>
               </Field>
             </div>
+            <ProjectCoverField
+              value={form.coverImage ?? ""}
+              disabled={busy}
+              onChange={(value) => update("coverImage", value)}
+            />
             <p className="pm-footnote">{t("pm.create.after")}</p>
           </div>
           <div className="pm-card pm-create-card">
@@ -215,36 +236,36 @@ export function CreateProjectScreen() {
               onDragLeave={() => setDragging(false)}
               onDrop={drop}
             >
-              {file ? (
+              {files.length ? (
                 <>
                   <FileText size={34} />
-                  <strong>{file.name}</strong>
-                  <small>{(file.size / 1024 / 1024).toFixed(2)} MB</small>
-                  <button
-                    type="button"
-                    className="pm-button pm-small"
-                    onClick={() => setFile(null)}
-                  >
-                    <X size={14} />
-                    {t("pm.create.remove")}
-                  </button>
+                  <strong>{files.length} planos seleccionados</strong>
+                  <ul className="w-full space-y-1 text-left">
+                    {files.map((file, index) => (
+                      <li key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1 text-xs">
+                        <span className="truncate">{file.name}</span>
+                        <button type="button" aria-label={`Quitar ${file.name}`} onClick={() => setFiles((current) => current.filter((_, position) => position !== index))}><X size={14} /></button>
+                      </li>
+                    ))}
+                  </ul>
                 </>
               ) : (
                 <>
                   <UploadCloud size={34} />
                   <strong>{t("pm.create.drop")}</strong>
-                  <small>{t("pm.fileHelp")}</small>
-                  <label className="pm-button">
+                  <small>PDF o imagen · máximo 3 MB por archivo · hasta 12 archivos</small>
+                </>
+              )}
+              <label className="pm-button">
                     <input
                       type="file"
                       className="sr-only"
+                      multiple
                       accept=".pdf,.png,.jpg,.jpeg,.webp"
-                      onChange={(e) => selectFile(e.target.files?.[0])}
+                      onChange={(e) => { if (e.target.files) selectFiles(e.target.files); e.target.value = ""; }}
                     />
-                    {t("pm.create.browse")}
-                  </label>
-                </>
-              )}
+                    {files.length ? "Agregar más planos" : t("pm.create.browse")}
+              </label>
             </div>
             <p className="pm-footnote">{t("pm.create.demo")}</p>
             <button

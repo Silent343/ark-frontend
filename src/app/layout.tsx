@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./workspace.css";
 import "./collaboration.css";
+import "./plan-import.css";
 import {AuthProvider} from "@/bounded-contexts/identity-access/presentation/auth-provider";
 import { AppShell } from "@/shared/presentation/components/app-shell";
 import { ErrorBoundary } from "@/shared/presentation/components/error-boundary";
@@ -9,12 +10,12 @@ import { PreferencesBootstrap } from "@/bounded-contexts/workspace-administratio
 import { I18nProvider } from "@/shared/i18n/presentation/i18n-provider";
 
 export const metadata: Metadata = {
-  title: { default: "Teluria", template: "%s · Teluria" },
+  title: { default: "Ark", template: "%s · Ark" },
   description: "Architectural plan intelligence and structural presentation workspace.",
   icons: {
-    icon: "/teluria-logo.png",
-    shortcut: "/teluria-logo.png",
-    apple: "/teluria-logo.png",
+    icon: "/ark-logo.png",
+    shortcut: "/ark-logo.png",
+    apple: "/ark-logo.png",
   },
 };
 

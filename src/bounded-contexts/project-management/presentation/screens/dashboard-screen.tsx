@@ -123,18 +123,28 @@ export function DashboardScreen() {
                 className="pm-card pm-project-card"
               >
                 <div className={"pm-project-art pm-art-" + (i % 3)}>
+                  {project.coverImage ? (
+                    // Project covers are validated image data URLs returned by the local REST API.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      className="pm-project-cover"
+                      src={project.coverImage}
+                      alt={t("pm.projectCoverAlt") + " " + project.name}
+                    />
+                  ) : (
+                    <svg viewBox="0 0 360 155" aria-hidden="true">
+                      <g fill="none" stroke="currentColor" strokeWidth="1.3">
+                        <path d="M70 112V56l108-37 113 42v59l-108 31-113-39M70 56l113 43 108-38M183 99v52M111 71v54M224 87v50M70 86l113 42 108-38" />
+                        <path
+                          d="M100 46l112 43M135 34l112 43M110 124V82l40 15v43M220 118V98l34-11v21M42 125l140 49 139-42"
+                          opacity=".6"
+                        />
+                      </g>
+                    </svg>
+                  )}
                   <span className="pm-art-label">
                     {t("pm.workspace")} / {String(i + 1).padStart(2, "0")}
                   </span>
-                  <svg viewBox="0 0 360 155" aria-hidden="true">
-                    <g fill="none" stroke="currentColor" strokeWidth="1.3">
-                      <path d="M70 112V56l108-37 113 42v59l-108 31-113-39M70 56l113 43 108-38M183 99v52M111 71v54M224 87v50M70 86l113 42 108-38" />
-                      <path
-                        d="M100 46l112 43M135 34l112 43M110 124V82l40 15v43M220 118V98l34-11v21M42 125l140 49 139-42"
-                        opacity=".6"
-                      />
-                    </g>
-                  </svg>
                   <span className="pm-art-floors">
                     {project.floors}{" "}
                     {t(project.floors === 1 ? "pm.level" : "pm.levels")}

@@ -18,6 +18,7 @@ export const ProjectRules: ResourceRules = {
     "soil_type",
     "status",
     "thumbnail_variant",
+    "cover_image",
     "progress",
     "phase",
     "client_name",
@@ -50,6 +51,17 @@ export const ProjectRules: ResourceRules = {
       ["blueprint", "tower", "house"],
       "thumbnail_variant",
     );
+    if (
+      typeof value.cover_image !== "string" ||
+      (value.cover_image &&
+        (!/^data:image\/(?:png|jpeg|webp);base64,[a-zA-Z0-9+/=]+$/.test(
+          value.cover_image,
+        ) ||
+          value.cover_image.length > 2_900_000))
+    )
+      throw new ValidationError(
+        "cover_image: use a PNG, JPEG or WebP image up to 2 MB.",
+      );
     amount(value.progress, "progress");
     if (Number(value.progress) > 100)
       throw new ValidationError("progress: maximum 100.");

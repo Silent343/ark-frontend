@@ -21,8 +21,8 @@ export function sessionCookie(request: Request) {
     .get("cookie")
     ?.split(";")
     .map((s) => s.trim())
-    .find((s) => s.startsWith("teluria_session="))
-    ?.slice("teluria_session=".length);
+    .find((s) => s.startsWith("ark_session="))
+    ?.slice("ark_session=".length);
 }
 /** Salted password derivation and hashed session tokens keep reusable secrets out of the database. */
 export async function hashPassword(password: string) {

@@ -1,4 +1,4 @@
-/** Supported lifecycle states for a Teluria project. */
+/** Supported lifecycle states for an Ark project. */
 export type ProjectStatus = "Ready" | "Processing" | "Draft";
 
 /** Visual variants used by the local thumbnail renderer. */
@@ -16,6 +16,7 @@ export interface Project {
   floorHeight: number;
   soilType: string;
   thumbnailVariant: ProjectThumbnailVariant;
+  coverImage: string;
   progress: number;
 }
 
@@ -24,7 +25,10 @@ export interface CreateProjectInput {
   name: string;
   location: string;
   floors: number;
+  /** Underground levels are represented by negative elevations in the blueprint. */
+  basements?: number;
   floorHeight: number;
   structureType: string;
   soilType: string;
+  coverImage?: string;
 }

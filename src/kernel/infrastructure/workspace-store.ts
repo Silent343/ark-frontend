@@ -28,7 +28,7 @@ export const collectionNames = [
   "blueprints",
 ] as const;
 const directory =
-  process.env.TELURIA_TEST_MODE === "1"
+  process.env.ARK_TEST_MODE === "1"
     ? path.join(process.cwd(), ".data", "qa")
     : path.join(process.cwd(), ".data");
 const globals = globalThis as typeof globalThis & {
@@ -40,7 +40,7 @@ async function connection() {
   if (!globals.collaborationConnection)
     globals.collaborationConnection = (async () => {
       await mkdir(directory, { recursive: true });
-      const sql = new DatabaseSync(path.join(directory, "teluria.sqlite"));
+      const sql = new DatabaseSync(path.join(directory, "ark.sqlite"));
       sql.exec(
         "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL)",
       );

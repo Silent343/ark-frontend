@@ -1,5 +1,6 @@
 import type { BlueprintRepository } from "../../application/ports/blueprint-repository";
 import type { Blueprint } from "../../domain/entities/blueprint";
+import { hydrateLegacySheetProvenance } from "../../domain/plan-provenance";
 import { requestJson } from "@/shared/infrastructure/rest-client";
 interface StoredPlan {
   id: string;
@@ -18,7 +19,7 @@ export class JsonBlueprintRepository implements BlueprintRepository {
     this.saves.delete(projectId);
     if (rows[0]) {
       this.revisions.set(projectId, rows[0]);
-      return rows[0].geometry;
+      return hydrateLegacySheetProvenance(rows[0].geometry);
     }
     const seed = (await fetch("/db.json").then((r) => r.json())) as {
       blueprint: Blueprint;
@@ -29,13 +30,17 @@ export class JsonBlueprintRepository implements BlueprintRepository {
     );
     const local =
       typeof window !== "undefined"
-        ? window.localStorage.getItem("teluria.blueprint.v2." + projectId)
+        ? window.localStorage.getItem("ark.blueprint.v2." + projectId)
         : null;
     let blueprint = {
       ...(seed.blueprints?.find((p) => p.projectId === projectId) ??
         seed.blueprint),
       projectId,
     };
+    // A new workspace starts empty; never pass an unrelated demonstration off as a detected plan.
+    if (!seed.blueprints?.some((p) => p.projectId === projectId) && seed.blueprint.projectId !== projectId) {
+      blueprint = { ...blueprint, sourceImage: undefined, rooms: [], walls: [], doors: [], windows: [], columns: [], stairs: [], levels: [{ id: "level-1", name: "Planta 1", elevation: 0 }], review: undefined, calibration: undefined };
+    }
     // Only the project owner may import pre-authentication browser data into the shared workspace.
     if (local && project.role === "owner") {
       try {
@@ -44,6 +49,7 @@ export class JsonBlueprintRepository implements BlueprintRepository {
         /* The untouched local value remains available for recovery. */
       }
     }
+    blueprint = hydrateLegacySheetProvenance(blueprint);
     if (project.role !== "client") {
       try {
         const row = await requestJson<StoredPlan>(this.url(projectId), {
@@ -55,14 +61,14 @@ export class JsonBlueprintRepository implements BlueprintRepository {
         const latest = await requestJson<StoredPlan[]>(this.url(projectId));
         if (!latest[0]) throw error;
         this.revisions.set(projectId, latest[0]);
-        return latest[0].geometry;
+        return hydrateLegacySheetProvenance(latest[0].geometry);
       }
     }
     return blueprint;
   }
   save(blueprint: Blueprint): Promise<void> {
     const previous = this.saves.get(blueprint.projectId) ?? Promise.resolve();
-    const pending = previous.then(() => this.write(blueprint));
+    const pending = previous.catch(() => undefined).then(() => this.write(blueprint));
     this.saves.set(blueprint.projectId, pending);
     return pending;
   }

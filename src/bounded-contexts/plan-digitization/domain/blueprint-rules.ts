@@ -1,4 +1,6 @@
 import { ValidationError } from "@/kernel/domain/resource";
+import { planElements, planTopologyIssues } from "./plan-review";
+import type { Blueprint } from "./entities/blueprint";
 /** Validates shared geometry before any client can consume it in the 2D or WebGL renderer. */
 export function validateSharedBlueprint(value: Record<string, unknown>) {
   const invalid = () => {
@@ -13,6 +15,21 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
     )
       invalid();
   };
+  // Apply the same trust boundary to page-local OCR and the legacy global review.
+  const validateEvidence = (candidate: unknown) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) invalid();
+    const evidence = candidate as Record<string, unknown>;
+    if (!["local-lines-v1", "manual-tracing"].includes(String(evidence.method))) invalid();
+    if (!Array.isArray(evidence.warnings) || evidence.warnings.length > 100 ||
+      !evidence.warnings.every((item) => typeof item === "string" && item.length <= 300)) invalid();
+    if (!Array.isArray(evidence.text) || evidence.text.length > 1000) invalid();
+    for (const item of evidence.text as Record<string, unknown>[]) {
+      if (!item || typeof item.text !== "string" || item.text.length > 200 ||
+        !["pdf", "ocr"].includes(String(item.source))) invalid();
+      for (const key of ["x", "y", "width", "height", "confidence"]) number(item[key]);
+      if (Number(item.confidence) < 0 || Number(item.confidence) > 100) invalid();
+    }
+  };
   const ids = new Set<string>();
   const collections = [
     "levels",
@@ -22,10 +39,15 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
     "windows",
     "columns",
     "stairs",
+    "roofs",
+    "services",
+    "routes",
+    "sheets",
   ];
   for (const key of collections) {
-    const rows = value[key] ?? (key === "stairs" ? [] : null);
+    const rows = value[key] ?? (["stairs", "roofs", "services", "routes", "sheets"].includes(key) ? [] : null);
     if (!Array.isArray(rows) || rows.length > 10000) invalid();
+    if (key === "sheets" && (rows as unknown[]).length > 24) invalid();
     for (const item of rows as unknown[]) {
       if (!item || typeof item !== "object" || Array.isArray(item)) invalid();
       const row = item as Record<string, unknown>;
@@ -34,7 +56,17 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
       ids.add(row.id as string);
       if (key === "levels") {
         number(row.elevation);
-        if (typeof row.name !== "string") invalid();
+        if (typeof row.name !== "string" || !row.name.trim()) invalid();
+      } else if (key === "sheets") {
+        if (!['architecture', 'structure', 'electrical', 'plumbing'].includes(String(row.discipline)) ||
+          typeof row.name !== 'string' || !row.name.trim() || row.name.length > 200 ||
+          typeof row.sourceName !== 'string' || row.sourceName.length > 300 ||
+          !Number.isInteger(row.page) || Number(row.page) < 1 ||
+          typeof row.image !== 'string' || row.image.length > 4_200_000 ||
+          !/^data:image\/(png|jpeg|webp);base64,/.test(row.image)) invalid();
+        for (const field of ['x', 'y']) number(row[field]);
+        for (const field of ['width', 'height', 'metersPerUnit']) number(row[field], true);
+        if (row.evidence !== undefined) validateEvidence(row.evidence);
       } else if (key === "walls") {
         for (const point of [row.start, row.end]) {
           if (!Array.isArray(point) || point.length !== 2) invalid();
@@ -42,9 +74,22 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
         }
         number(row.thickness, true);
         number(row.height, true);
+      } else if (key === "routes") {
+        if (!["electrical", "plumbing"].includes(String(row.kind)) ||
+          typeof row.fromId !== "string" || typeof row.toId !== "string" ||
+          row.fromId === row.toId) invalid();
       } else {
         number(row.x);
         number(row.y);
+        if (key === 'roofs') {
+          if (typeof row.name !== 'string' || !row.name.trim() || row.name.length > 100) invalid();
+          for (const field of ['width', 'depth', 'thickness', 'elevation']) number(row[field], true);
+          if (Number(row.thickness) > 2 || Number(row.elevation) > 100) invalid();
+        }
+        if (key === 'services') {
+          if (!['outlet', 'switch', 'light', 'panel', 'water', 'drain'].includes(String(row.kind)) ||
+            typeof row.name !== 'string' || !row.name.trim() || row.name.length > 100) invalid();
+        }
         if (key === "rooms") {
           number(row.width, true);
           number(row.height, true);
@@ -54,17 +99,128 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
         if (key === "doors" || key === "windows") {
           number(row.width, true);
           number(row.rotation);
+          if (row.height !== undefined) number(row.height, true);
+          if (row.sillHeight !== undefined) {
+            number(row.sillHeight);
+            if (Number(row.sillHeight) < 0) invalid();
+          }
           if (
             !(value.walls as { id: string }[]).some((w) => w.id === row.wallId)
           )
             invalid();
         }
         if (key === "columns") number(row.size, true);
-        if (key === "stairs") number(row.radius, true);
+        if (key === "stairs") {
+          number(row.radius, true);
+          if (row.type !== "spiral" && row.type !== "straight") invalid();
+          if (row.type === "straight") {
+            number(row.length, true);
+            number(row.rotation);
+          }
+        }
       }
     }
   }
   if (!(value.levels as unknown[]).length) invalid();
+  const levelIds = new Set((value.levels as {id:string}[]).map((level) => level.id));
+  const sheets = (value.sheets ?? []) as {id:string;levelId:string;discipline:string}[];
+  const sheetIds = new Set(sheets.map((sheet) => sheet.id));
+  const firstLevelId = ((value.levels as {id:string;elevation:number}[]).find((level) => level.elevation === 0) ??
+    (value.levels as {id:string}[])[0]).id;
+  for (const key of collections.filter((item) => item !== 'levels')) {
+    for (const row of (value[key] ?? []) as Record<string, unknown>[]) {
+      if ((row.levelId !== undefined || ['sheets','roofs','services'].includes(key)) &&
+        (typeof row.levelId !== 'string' || !levelIds.has(row.levelId))) invalid();
+      if (key !== 'sheets' && row.sheetId !== undefined) {
+        if (typeof row.sheetId !== 'string' || !sheetIds.has(row.sheetId)) invalid();
+        const sheet = sheets.find((item) => item.id === row.sheetId)!;
+        if (sheet.levelId !== (row.levelId ?? firstLevelId)) invalid();
+        if (key === 'services' &&
+          (['water','drain'].includes(String(row.kind)) ? sheet.discipline !== 'plumbing' : sheet.discipline !== 'electrical')) invalid();
+        if (key === 'routes' && sheet.discipline !== row.kind) invalid();
+      }
+      if (key === 'doors' || key === 'windows') {
+        const wall = (value.walls as {id:string;levelId?:string}[]).find((item) => item.id === row.wallId);
+        if (!wall || (row.levelId ?? firstLevelId) !== (wall.levelId ?? firstLevelId)) invalid();
+      }
+    }
+  }
+  const services = new Map(((value.services ?? []) as Array<{id:string;levelId:string;kind:string}>).map((item) => [item.id, item]));
+  const routePairs = new Set<string>();
+  for (const route of (value.routes ?? []) as Array<{levelId:string;kind:string;fromId:string;toId:string}>) {
+    const from = services.get(route.fromId);
+    const to = services.get(route.toId);
+    const serviceKind = (kind: string) => ['water', 'drain'].includes(kind) ? 'plumbing' : 'electrical';
+    if (!from || !to || from.levelId !== route.levelId || to.levelId !== route.levelId ||
+      serviceKind(from.kind) !== route.kind || serviceKind(to.kind) !== route.kind) invalid();
+    const pair = [route.fromId, route.toId].sort().join('|');
+    if (routePairs.has(pair)) invalid();
+    routePairs.add(pair);
+  }
+  if (value.sourceSize !== undefined) {
+    const size = value.sourceSize as Record<string, unknown>;
+    if (!size || typeof size !== "object") invalid();
+    number(size.width, true);
+    number(size.height, true);
+  }
+  if (value.calibration !== undefined) {
+    const calibration = value.calibration as Record<string, unknown>;
+    if (!calibration || typeof calibration !== "object") invalid();
+    number(calibration.metersPerUnit, true);
+    number(calibration.referenceDistanceM, true);
+    const points = calibration.referencePoints;
+    if (!Array.isArray(points) || points.length !== 2) invalid();
+    for (const point of points as unknown[]) {
+      if (!Array.isArray(point) || point.length !== 2) invalid();
+      (point as unknown[]).forEach((v) => number(v));
+    }
+    const [a, b] = points as [[number, number], [number, number]];
+    const distance = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (
+      distance < 10 ||
+      Math.abs(
+        distance * Number(calibration.metersPerUnit) -
+          Number(calibration.referenceDistanceM),
+      ) > 0.001
+    )
+      invalid();
+  }
+  if (value.review !== undefined) {
+    const review = value.review as Record<string, unknown>;
+    if (
+      !review ||
+      typeof review !== "object" ||
+      !["draft", "reviewed"].includes(String(review.status))
+    )
+      invalid();
+    validateEvidence(review);
+    if (
+      typeof review.sourceName !== "string" ||
+      review.sourceName.length > 300 ||
+      !Number.isInteger(review.page) ||
+      Number(review.page) < 1
+    )
+      invalid();
+    if (
+      !Array.isArray(review.reviewedIds) ||
+      review.reviewedIds.length > 10000 ||
+      new Set(review.reviewedIds).size !== review.reviewedIds.length ||
+      !review.reviewedIds.every((id) => typeof id === "string" && ids.has(id))
+    )
+      invalid();
+    const plan = value as unknown as Blueprint;
+    const geometryIds = new Set(planElements(plan).map((item) => item.id));
+    if (!(review.reviewedIds as string[]).every((id) => geometryIds.has(id)))
+      invalid();
+    if (
+      review.status === "reviewed" &&
+      (!value.calibration ||
+        !geometryIds.size ||
+        (review.reviewedIds as string[]).length !== geometryIds.size ||
+        planTopologyIssues(plan).length)
+    )
+      invalid();
+  }
   if (
     !Array.isArray(value.materials) ||
     !value.materials.every((v) => typeof v === "string")

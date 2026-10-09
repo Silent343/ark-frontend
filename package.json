@@ -1,8 +1,13 @@
 {
-  "name": "teluria-frontend",
+  "name": "ark-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare:plans": "node scripts/prepare-plan-assets.mjs",
+    "predev": "npm run prepare:plans",
+    "prebuild": "npm run prepare:plans",
+    "test:plans": "node scripts/test-plan-pipeline.mjs",
+    "test:plans:browser": "node scripts/test-plan-browser.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -13,11 +18,16 @@
   "dependencies": {
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/por": "^1.0.0",
+    "@tesseract.js-data/spa": "^1.0.0",
     "lucide-react": "^1.31.0",
     "next": "^16.3.3",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "tesseract.js": "^7.0.0",
     "three": "^0.185.1"
   },
   "devDependencies": {
@@ -28,6 +38,7 @@
     "@types/three": "^0.185.4",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.3",
+    "playwright-core": "^1.63.0",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.2"

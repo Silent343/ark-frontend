@@ -2,7 +2,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, RefreshCw, Bell } from "lucide-react";
+import { ArrowLeft, Bell, RefreshCw } from "lucide-react";
 import { useWorkspace } from "./workspace-context";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { WorkspaceSkeleton } from "./workspace-ui";
@@ -13,34 +13,17 @@ const ClientPortal = dynamic(
     ),
   { loading: () => <WorkspaceSkeleton /> },
 );
-const groups = [
+type WorkspaceTab = readonly [path: string, labelKey: string];
+
+/** Each top-level destination answers one project question; its views stay visible in context. */
+const projectAreas: Array<{ key: string; tabs: WorkspaceTab[] }> = [
   {
-    key: "pm.workspace",
+    key: "pm.nav.work",
     tabs: [
-      ["", "pm.overview"],
-      ["tasks", "pm.tasks"],
+      ["tasks", "pm.kanban"],
       ["schedule", "c.schedule"],
-      ["milestones", "pm.milestones"],
+      ["milestones", "pm.gantt"],
       ["team", "c.team"],
-    ],
-  },
-  {
-    key: "pm.delivery",
-    tabs: [
-      ["documents", "pm.documents"],
-      ["deliverables", "c.deliverables"],
-      ["approvals", "pm.client"],
-      ["comments", "c.comments"],
-    ],
-  },
-  {
-    key: "pm.control",
-    tabs: [
-      ["issues", "pm.issues"],
-      ["budget-items", "pm.budget"],
-      ["reports", "c.reports"],
-      ["change-log", "c.history"],
-      ["notifications", "c.notifications"],
     ],
   },
   {
@@ -51,6 +34,25 @@ const groups = [
       ["simulation", "pm.simulation"],
     ],
   },
+  {
+    key: "pm.nav.delivery",
+    tabs: [
+      ["documents", "pm.documents"],
+      ["deliverables", "c.deliverables"],
+      ["approvals", "pm.client"],
+      ["comments", "c.comments"],
+    ],
+  },
+  {
+    key: "pm.control",
+    tabs: [
+      ["budget-items", "pm.budget"],
+      ["issues", "pm.issues"],
+      ["reports", "c.reports"],
+      ["change-log", "c.history"],
+      ["notifications", "c.notifications"],
+    ],
+  },
 ];
 const clientTabs = [
   ["client-portal", "c.clientPortal"],
@@ -59,7 +61,7 @@ const clientTabs = [
   ["comments", "c.comments"],
   ["model", "pm.model"],
   ["notifications", "c.notifications"],
-];
+] satisfies WorkspaceTab[];
 /** Navigation mirrors API capabilities. Hiding links is supplementary, not an authorization boundary. */
 export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
   const { data, loading, error, reload, busy, notice } = useWorkspace(),
@@ -81,9 +83,9 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
   const root = "/projects/" + data.project.id,
     client = data.project.role === "client",
     slug = pathname.slice(root.length).replace(/^\//, "");
-  const visible = client
-    ? [{ key: "c.clientPortal", tabs: clientTabs }]
-    : groups;
+  const activeArea = projectAreas.find((area) =>
+    area.tabs.some(([path]) => path === slug),
+  );
   const restricted = client && !clientTabs.some(([path]) => path === slug);
   const unread = data.coordination.notifications.filter(
     (n) => !n.read_at,
@@ -113,34 +115,72 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
       <label className="collab-mobile-nav">
         <span>{t("pm.workspace")}</span>
         <select
-          value={slug}
-          onChange={(e) =>
-            router.push(root + (e.target.value ? "/" + e.target.value : ""))
-          }
+          value={client ? slug || "client-portal" : activeArea?.key ?? "pm.overview"}
+          onChange={(event) => {
+            const destination = event.currentTarget.value;
+            if (client) return router.push(root + "/" + destination);
+            if (destination === "pm.overview") return router.push(root);
+            const area = projectAreas.find((item) => item.key === destination);
+            if (area) router.push(root + "/" + area.tabs[0][0]);
+          }}
         >
-          {visible
-            .flatMap((g) => g.tabs)
-            .map(([path, key]) => (
-              <option key={path} value={path}>
-                {t(key)}
-              </option>
-            ))}
+          {client
+            ? clientTabs.map(([path, key]) => (
+                <option key={path} value={path}>{t(key)}</option>
+              ))
+            : [
+                <option key="overview" value="pm.overview">{t("pm.overview")}</option>,
+                ...projectAreas.map((area) => (
+                  <option key={area.key} value={area.key}>{t(area.key)}</option>
+                )),
+              ]}
         </select>
       </label>
+      {!client && activeArea && (
+        <label className="collab-mobile-subnav">
+          <span>{t("pm.nav.view")}</span>
+          <select
+            value={slug}
+            onChange={(event) => router.push(root + "/" + event.target.value)}
+          >
+            {activeArea.tabs.map(([path, key]) => (
+              <option key={path} value={path}>{t(key)}</option>
+            ))}
+          </select>
+        </label>
+      )}
       <nav className="collab-module-nav" aria-label={t("pm.workspace")}>
-        {visible.map((group) => (
-          <div key={group.key} className="collab-module-group">
-            {group.tabs.map(([path, key]) => (
+        <div className="collab-primary-views">
+          {client ? clientTabs.map(([path, key]) => (
+            <Link key={path} href={root + "/" + path} aria-current={slug === path ? "page" : undefined}>{t(key)}</Link>
+          )) : (
+            <>
+              <Link href={root} aria-current={!slug ? "page" : undefined}>{t("pm.overview")}</Link>
+              {projectAreas.map((area) => (
+                <Link
+                  key={area.key}
+                  href={root + "/" + area.tabs[0][0]}
+                  data-active={activeArea?.key === area.key ? "true" : undefined}
+                >
+                  {t(area.key)}
+                </Link>
+              ))}
+            </>
+          )}
+        </div>
+        {!client && activeArea && (
+          <div className="collab-context-views" role="group" aria-label={t("pm.nav.view")}>
+            {activeArea.tabs.map(([path, key]) => (
               <Link
                 key={path}
-                href={root + (path ? "/" + path : "")}
+                href={root + "/" + path}
                 aria-current={slug === path ? "page" : undefined}
               >
                 {t(key)}
               </Link>
             ))}
           </div>
-        ))}
+        )}
       </nav>
       {error && (
         <div role="alert" className="pm-alert pm-danger">

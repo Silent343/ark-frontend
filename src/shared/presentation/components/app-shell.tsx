@@ -63,8 +63,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="relative flex h-[88px] items-center gap-3 border-b border-white/10 px-7">
           <div className="relative size-11 overflow-hidden rounded-xl bg-[#f5f4ec] shadow-[0_0_0_1px_rgba(255,255,255,.15)]">
             <Image
-              src="/teluria-logo.png"
-              alt="Logo de Teluria"
+              src="/ark-logo.png"
+              alt="Logo de Ark"
               fill
               sizes="44px"
               className="scale-125 object-cover"
@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-semibold tracking-[-.03em]">
-                Teluria
+                Ark
               </span>
               <span className="rounded-full bg-[#ff6a2b] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider">
                 Beta
@@ -155,10 +155,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         </nav>
 
-        <div className="relative m-4 rounded-2xl border border-white/10 bg-white/[.04] p-2">
+        <div className="relative mx-5 mb-5 space-y-1">
           <Link
             href="/profile"
-            className={`flex items-center gap-3 rounded-xl p-2 transition hover:bg-white/[.06] ${pathname === "/profile" ? "bg-white/[.08]" : ""}`}
+            className={`flex items-center gap-3 rounded-xl px-1 py-2 transition hover:bg-white/[.05] ${pathname === "/profile" ? "bg-white/[.07]" : ""}`}
           >
             <div className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-[#f3c4a8] to-[#8ea9a1] text-xs font-bold text-[#111815]">
               GR
@@ -174,7 +174,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => void signOut()}
-            className="mt-1 flex h-9 w-full items-center justify-center gap-2 rounded-xl text-[11px] font-semibold text-white/55 transition hover:bg-white/[.07] hover:text-white"
+            className="ml-12 flex h-8 items-center gap-2 rounded-lg px-2 text-[11px] font-semibold text-white/50 transition hover:bg-white/[.06] hover:text-white"
           >
             <LogOut size={14} />
             {t("c.signOut", "Cerrar sesión")}
@@ -186,15 +186,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-2.5">
           <div className="relative size-10 overflow-hidden rounded-xl bg-white">
             <Image
-              src="/teluria-logo.png"
-              alt="Logo de Teluria"
+              src="/ark-logo.png"
+              alt="Logo de Ark"
               fill
               sizes="40px"
               className="scale-125 object-cover"
               priority
             />
           </div>
-          <span className="font-semibold">Teluria</span>
+          <span className="font-semibold">Ark</span>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -227,14 +227,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="flex items-center gap-2.5">
                 <div className="relative size-10 overflow-hidden rounded-xl bg-white">
                   <Image
-                    src="/teluria-logo.png"
-                    alt="Logo de Teluria"
+                    src="/ark-logo.png"
+                    alt="Logo de Ark"
                     fill
                     sizes="40px"
                     className="scale-125 object-cover"
                   />
                 </div>
-                <span className="font-semibold">Teluria</span>
+                <span className="font-semibold">Ark</span>
               </div>
               <button
                 aria-label="Cerrar menú"

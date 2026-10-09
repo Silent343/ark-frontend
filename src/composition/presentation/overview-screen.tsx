@@ -19,6 +19,7 @@ import { useWorkspace, progressOf } from "./workspace-context";
 import { Dialog, Field, Status, money, dateLabel } from "./workspace-ui";
 import { requestJson } from "@/shared/infrastructure/rest-client";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
+import { ProjectCoverField } from "@/bounded-contexts/project-management/presentation/components/project-cover-field";
 
 const BlueprintCanvas = dynamic(
   () =>
@@ -43,6 +44,7 @@ export function OverviewScreen() {
   const { data, mutate, busy, error } = useWorkspace();
   const { t, locale } = useI18n();
   const [editing, setEditing] = useState(false);
+  const [coverImage, setCoverImage] = useState("");
   const [previewBlueprint, setPreviewBlueprint] = useState<Blueprint | null>(
     null,
   );
@@ -75,11 +77,49 @@ export function OverviewScreen() {
     .filter((milestone) => milestone.status !== "completed")
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
   const visibleActivities = data.activities.slice(0, 8);
+  const now = new Date();
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+  // Only actionable states appear here; summary metrics remain separate from work to resolve.
+  const attentionItems = [
+    {
+      key: "milestones",
+      count: data.milestones.filter((milestone) => milestone.status !== "completed" && milestone.due_date < today).length,
+      href: root + "/milestones",
+    },
+    {
+      key: "overdue",
+      count: data.tasks.filter((task) => task.status !== "done" && task.due_date < today).length,
+      href: root + "/tasks",
+    },
+    {
+      key: "review",
+      count: data.tasks.filter((task) => task.status === "review").length,
+      href: root + "/tasks",
+    },
+    {
+      key: "approvals",
+      count: data.approvals.filter((approval) => approval.status === "pending").length,
+      href: root + "/approvals",
+    },
+    {
+      key: "issues",
+      count: data.issues.filter((issue) => issue.status !== "resolved").length,
+      href: root + "/issues",
+    },
+  ].filter((item) => item.count > 0);
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const input = Object.fromEntries(new FormData(event.currentTarget));
-    const payload = { ...input, budget_total: Number(input.budget_total) };
+    const payload = {
+      ...input,
+      budget_total: Number(input.budget_total),
+      cover_image: coverImage,
+    };
     if (
       await mutate(() =>
         requestJson("/api/v1/projects/" + project.id, {
@@ -107,7 +147,10 @@ export function OverviewScreen() {
           <button
             hidden={project.role === "collaborator"}
             className="pm-button"
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              setCoverImage(project.coverImage);
+              setEditing(true);
+            }}
           >
             <PenLine size={15} />
             {t("pm.editProject")}
@@ -161,6 +204,32 @@ export function OverviewScreen() {
           <small>{t("pm.projectTeam", "equipo del proyecto")}</small>
         </article>
       </div>
+
+      <section className="pm-attention" aria-labelledby="pm-attention-title">
+        <div className="pm-section-heading">
+          <div>
+            <p className="pm-eyebrow">{t("pm.attention.eyebrow")}</p>
+            <h2 id="pm-attention-title">{t("pm.attention.title")}</h2>
+          </div>
+        </div>
+        {attentionItems.length ? (
+          <div className="pm-attention-list">
+            {attentionItems.map((item) => (
+              <Link className="pm-attention-item" href={item.href} key={item.key}>
+                <strong>{item.count}</strong>
+                <span>{t("pm.attention." + item.key)}</span>
+                <ArrowUpRight size={16} aria-hidden="true" />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="pm-attention-clear">
+            <CheckCircle2 size={18} aria-hidden="true" />
+            <span>{t("pm.attention.clear")}</span>
+            <Link href={root + "/milestones"}>{t("pm.attention.planNext")}</Link>
+          </div>
+        )}
+      </section>
 
       <div className="pm-project-dashboard-grid">
         <section className="pm-card pm-plan-overview">
@@ -345,6 +414,11 @@ export function OverviewScreen() {
                 </select>
               </Field>
             </div>
+            <ProjectCoverField
+              value={coverImage}
+              disabled={busy}
+              onChange={setCoverImage}
+            />
             <div className="pm-dialog-actions">
               <button
                 type="button"

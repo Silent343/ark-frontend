@@ -86,7 +86,7 @@ export function StudioCalendarScreen() {
     <div className="pm-workspace">
       <header className="pm-page-heading">
         <div>
-          <p className="pm-eyebrow">TELURIA</p>
+          <p className="pm-eyebrow">ARK</p>
           <h1>{t("c.globalCalendar")}</h1>
           <p>{t("c.globalCalendarHelp")}</p>
         </div>

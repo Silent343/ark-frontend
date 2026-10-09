@@ -38,6 +38,7 @@ import {
 import { GlobalSiteSelector } from "@/bounded-contexts/site-planning/presentation/components/global-site-selector";
 import type { ConstructionSiteSelection } from "@/bounded-contexts/site-planning/public";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
+import { useRenderSettings } from "../use-render-settings";
 
 const BuildingScene = dynamic(
   () =>
@@ -77,6 +78,8 @@ const cameraOptions: { id: CameraPreset; label: string; icon: typeof Orbit }[] =
 export function ModelScreen({ projectId }: { projectId: string }) {
   const { data, loading, error, reload } = useProjectWorkspace(projectId);
   const { t } = useI18n();
+  const { settings: renderSettings, update: updateRenderSettings } =
+    useRenderSettings(projectId);
   const searchParams = useSearchParams();
   const editMode = searchParams.get("mode") === "edit";
   const [material, setMaterial] = useState<MaterialPreset>("Concrete");
@@ -135,6 +138,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               blueprint={data.blueprint}
               floors={levelCount}
               material="Concrete"
+              renderSettings={renderSettings}
               lighting="Day"
               cameraPreset="Isometric"
               modelViewMode="Architecture"
@@ -221,10 +225,12 @@ export function ModelScreen({ projectId }: { projectId: string }) {
                 Mostrar terreno
               </label>
               <button
+                disabled={!data.blueprint.roofs?.length}
+                title={!data.blueprint.roofs?.length ? "Define zonas de cubierta en el editor 2D" : undefined}
                 onClick={() => setShowRoof((value) => !value)}
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce0d8] bg-white px-3 text-[10px] font-semibold"
               >
-                {showRoof ? <Eye size={13} /> : <EyeOff size={13} />} Techo
+                {showRoof ? <Eye size={13} /> : <EyeOff size={13} />} Cubiertas ({data.blueprint.roofs?.length ?? 0})
               </button>
             </div>
           </div>
@@ -236,6 +242,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               lighting={lighting}
               cameraPreset={camera}
               modelViewMode={viewMode}
+              renderSettings={renderSettings}
               showRoof={showRoof}
               isolatedLevel={isolatedLevel}
               siteSelection={
@@ -256,6 +263,28 @@ export function ModelScreen({ projectId }: { projectId: string }) {
         </Panel>
 
         <aside className="model-control-rail space-y-5">
+          <div className="plan-review-status">
+            <strong>
+              {t(
+                data.blueprint.calibration
+                  ? "render.calibrated"
+                  : "render.uncalibrated",
+              )}
+            </strong>
+            <p>
+              {t(
+                data.blueprint.review?.status === "reviewed"
+                  ? "render.reviewed"
+                  : "render.draft",
+              )}
+            </p>
+            <Link
+              className="pm-button"
+              href={`/projects/${projectId}/editor?mode=edit`}
+            >
+              {t("render.reviewPlan")}
+            </Link>
+          </div>
           <Panel className="p-5">
             <div className="flex items-center gap-2">
               <Layers3 size={16} className="text-[#65716b]" />
@@ -299,16 +328,27 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               {Array.from({ length: levelCount }, (_, index) => index + 1).map(
                 (level) => (
                   <button
-                    key={level}
+                    key={data.blueprint.levels[level - 1].id}
                     onClick={() => setIsolatedLevel(level)}
                     className={`rounded-xl border px-3 py-2 text-[10px] font-semibold ${isolatedLevel === level ? "border-[#596151] bg-[#30382f] text-white" : "border-[#e0e3dc] bg-white text-[#758079]"}`}
                   >
-                    Piso {level}
+                    {data.blueprint.levels[level - 1].name}
                   </button>
                 ),
               )}
             </div>
           </Panel>
+          {!!data.blueprint.services?.length && (
+            <Panel className="p-5">
+              <h2 className="text-sm font-semibold">{t("model.servicesTitle")}</h2>
+              <p className="mt-2 text-xs text-[#66736d]">{t("model.servicesHint")}</p>
+              <p className="mt-2 text-xs text-[#66736d]">{t("model.routesHint").replace("{count}", String(data.blueprint.routes?.length ?? 0))}</p>
+              <div className="mt-3 flex flex-wrap gap-3 text-xs font-medium">
+                <span className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full bg-[#e5b546]" /> {t("model.electrical")}</span>
+                <span className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full bg-[#1885b5]" /> {t("model.plumbing")}</span>
+              </div>
+            </Panel>
+          )}
           <Panel className="p-5">
             <div className="flex items-center gap-2">
               <Rotate3D size={16} className="text-[#65716b]" />
@@ -366,6 +406,63 @@ export function ModelScreen({ projectId }: { projectId: string }) {
                   {label}
                 </button>
               ))}
+            </div>
+            <div className="render-controls mt-4">
+              <label>
+                {t("render.exposure")} · {renderSettings.exposure.toFixed(2)}
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.05}
+                  value={renderSettings.exposure}
+                  onChange={(event) =>
+                    updateRenderSettings({
+                      exposure: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                {t("render.azimuth")} · {renderSettings.sunAzimuth}°
+                <input
+                  type="range"
+                  min={0}
+                  max={360}
+                  value={renderSettings.sunAzimuth}
+                  onChange={(event) =>
+                    updateRenderSettings({
+                      sunAzimuth: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                {t("render.elevation")} · {renderSettings.sunElevation}°
+                <input
+                  type="range"
+                  min={5}
+                  max={85}
+                  disabled={lighting !== "Day"}
+                  value={renderSettings.sunElevation}
+                  onChange={(event) =>
+                    updateRenderSettings({
+                      sunElevation: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label className="plan-check">
+                <input
+                  type="checkbox"
+                  checked={renderSettings.shadows}
+                  onChange={(event) =>
+                    updateRenderSettings({ shadows: event.target.checked })
+                  }
+                />
+                {t("render.shadows")}
+              </label>
+              <p className="text-xs leading-relaxed">{t("render.note")}</p>
             </div>
           </Panel>
           <div className="rounded-2xl border border-[#d7dcd3] bg-[#eef0e9] p-4">

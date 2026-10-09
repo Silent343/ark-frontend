@@ -63,7 +63,7 @@ function PreferencesContent({ initialPreferences }: { initialPreferences: Worksp
     const file = new Blob([JSON.stringify({ exportedAt:new Date().toISOString(),preferences },null,2)],{type:"application/json"});
     const url = URL.createObjectURL(file);
     const anchor = document.createElement("a");
-    anchor.href=url; anchor.download="teluria-preferences.json"; anchor.click();
+    anchor.href=url; anchor.download="ark-preferences.json"; anchor.click();
     URL.revokeObjectURL(url);
     setFeedback("Archivo de preferencias exportado.");
   };

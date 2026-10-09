@@ -9,7 +9,7 @@ const I18nContext=createContext<I18nContextValue|null>(null);
 const repository=new HttpTranslationRepository();
 
 function normalizeLocale(value?:string):SupportedLocale{if(value?.toLowerCase().startsWith("en"))return"en";if(value?.toLowerCase().startsWith("pt"))return"pt";return"es";}
-function subscribeLocale(notify:()=>void){window.addEventListener("teluria:preferences-changed",notify);return()=>window.removeEventListener("teluria:preferences-changed",notify);}
+function subscribeLocale(notify:()=>void){window.addEventListener("ark:preferences-changed",notify);return()=>window.removeEventListener("ark:preferences-changed",notify);}
 function getLocaleSnapshot(){return normalizeLocale(document.documentElement.dataset.locale??document.documentElement.lang);}
 
 /** Injects HTTP-loaded translations and reacts to persisted preference changes. */

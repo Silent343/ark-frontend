@@ -39,8 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
   useEffect(() => {
     const expired = () => setSession({ user: null });
-    window.addEventListener("teluria:session-expired", expired);
-    return () => window.removeEventListener("teluria:session-expired", expired);
+    window.addEventListener("ark:session-expired", expired);
+    return () => window.removeEventListener("ark:session-expired", expired);
   }, []);
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       <div className="collab-auth">
         <div className="collab-auth-story">
           <Building2 size={40} />
-          <p className="pm-eyebrow">TELURIA · WORKSPACE</p>
+          <p className="pm-eyebrow">ARK · WORKSPACE</p>
           <h1>{t("c.authTitle")}</h1>
           <p>{t("c.authDescription")}</p>
           <div className="collab-auth-points">

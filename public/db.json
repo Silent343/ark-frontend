@@ -173,9 +173,9 @@
       "id": "gabriel-ramirez",
       "initials": "GR",
       "fullName": "Gabriel Ramírez",
-      "email": "gabriel.ramirez@teluria.app",
+      "email": "gabriel.ramirez@ark.app",
       "phone": "+51 987 654 321",
-      "organization": "Estudio Teluria Arquitectura",
+      "organization": "Estudio Ark Arquitectura",
       "position": "Arquitecto proyectista",
       "licenseNumber": "CAP 48292",
       "specialty": "Diseño sismorresistente y concreto armado",
@@ -211,7 +211,7 @@
         { "id": "getting-started", "title": "Primeros pasos", "description": "Aprende lo básico para comenzar tu primer proyecto.", "icon": "Rocket" },
         { "id": "guides", "title": "Guías de uso", "description": "Tutoriales paso a paso para cada herramienta.", "icon": "Book" },
         { "id": "faq", "title": "Preguntas frecuentes", "description": "Respuestas a las dudas más comunes.", "icon": "Question" },
-        { "id": "updates", "title": "Novedades", "description": "Últimas actualizaciones y mejoras de Teluria.", "icon": "Sparkles" }
+        { "id": "updates", "title": "Novedades", "description": "Últimas actualizaciones y mejoras de Ark.", "icon": "Sparkles" }
       ],
       "articles": [
         { "id": "article-1", "category": "Editor 2D", "title": "Cómo cargar y escalar planos arquitectónicos en imagen o PDF" },
@@ -221,9 +221,9 @@
         { "id": "article-5", "category": "Cálculo", "title": "Diferencias entre una demostración visual y un análisis estructural" }
       ],
       "channels": [
-        { "id": "email", "title": "Correo electrónico", "detail": "soporte@teluria.app", "icon": "Mail" },
+        { "id": "email", "title": "Correo electrónico", "detail": "soporte@ark.app", "icon": "Mail" },
         { "id": "chat", "title": "Chat en vivo", "detail": "Lun–Vie · 9:00–18:00", "icon": "Message" },
-        { "id": "community", "title": "Comunidad y foro", "detail": "comunidad.teluria.app", "icon": "Community" }
+        { "id": "community", "title": "Comunidad y foro", "detail": "comunidad.ark.app", "icon": "Community" }
       ],
       "version": "1.3.0",
       "lastUpdated": "Agosto 2026"

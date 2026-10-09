@@ -34,7 +34,7 @@ export function ReportsScreen() {
       const url = URL.createObjectURL(await response.blob()),
         anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "Teluria-" + data.project.name + ".pdf";
+      anchor.download = "Ark-" + data.project.name + ".pdf";
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
