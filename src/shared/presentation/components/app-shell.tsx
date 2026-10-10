@@ -63,12 +63,13 @@ export function AppShell({ children, previewMode = false }: { children: ReactNod
         <div className="relative flex h-[88px] items-center gap-3 border-b border-white/10 px-7">
           <div className="relative size-11 overflow-hidden rounded-xl bg-[#f5f4ec] shadow-[0_0_0_1px_rgba(255,255,255,.15)]">
             <Image
-              src="/ark-logo.png"
+              src="/ark-logo.svg"
               alt="Logo de Ark"
               fill
               sizes="44px"
-              className="scale-125 object-cover"
+              className="object-cover"
               priority
+              unoptimized
             />
           </div>
           <div>
@@ -192,12 +193,13 @@ export function AppShell({ children, previewMode = false }: { children: ReactNod
         <div className="flex items-center gap-2.5">
           <div className="relative size-10 overflow-hidden rounded-xl bg-white">
             <Image
-              src="/ark-logo.png"
+              src="/ark-logo.svg"
               alt="Logo de Ark"
               fill
               sizes="40px"
-              className="scale-125 object-cover"
+              className="object-cover"
               priority
+              unoptimized
             />
           </div>
           <span className="font-semibold">Ark</span>
@@ -233,11 +235,12 @@ export function AppShell({ children, previewMode = false }: { children: ReactNod
               <div className="flex items-center gap-2.5">
                 <div className="relative size-10 overflow-hidden rounded-xl bg-white">
                   <Image
-                    src="/ark-logo.png"
+                    src="/ark-logo.svg"
                     alt="Logo de Ark"
                     fill
                     sizes="40px"
-                    className="scale-125 object-cover"
+                    className="object-cover"
+                    unoptimized
                   />
                 </div>
                 <span className="font-semibold">Ark</span>

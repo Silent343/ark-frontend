@@ -13,9 +13,9 @@ export const metadata: Metadata = {
   title: { default: "Ark", template: "%s · Ark" },
   description: "Architectural plan intelligence and structural presentation workspace.",
   icons: {
-    icon: "/ark-logo.png",
-    shortcut: "/ark-logo.png",
-    apple: "/ark-logo.png",
+    icon: "/ark-logo.svg",
+    shortcut: "/ark-logo.svg",
+    apple: "/ark-logo.svg",
   },
 };
 

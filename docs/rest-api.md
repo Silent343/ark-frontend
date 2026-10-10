@@ -12,9 +12,9 @@ Las colecciones admiten `GET` y, cuando corresponde, `POST`; los elementos admit
 
 ## Identidad y acceso
 
-`POST /api/v1/users` registra una cuenta; `GET`, `POST` y `DELETE /api/v1/sessions` consultan, inician y cierran la sesión. `GET` y `POST /api/v1/invitations/{token}` inspeccionan y aceptan una invitación. Un registro inicial solo está permitido para `TELURIA_OWNER_EMAIL` en una base vacía; después se necesita una invitación. La API verifica sesión, rol y pertenencia en cada recurso de proyecto. El autor se obtiene de la sesión, nunca del JSON enviado por el cliente.
+`POST /api/v1/users` registra una cuenta y exige `terms_accepted: true` y `privacy_accepted: true`; la API conserva fecha y versión de cada consentimiento. `GET`, `POST` y `DELETE /api/v1/sessions` consultan, inician y cierran la sesión. El login puede enviar `remember_me: true` para mantener la sesión 30 días; sin esa opción usa una cookie de sesión y una vigencia máxima de 12 horas. “Recordarme” no guarda la contraseña en el navegador. `GET` y `POST /api/v1/invitations/{token}` inspeccionan y aceptan una invitación. Un registro inicial solo está permitido para `TELURIA_OWNER_EMAIL` en una base vacía; después se necesita una invitación. La API verifica sesión, rol y pertenencia en cada recurso de proyecto. El autor se obtiene de la sesión, nunca del JSON enviado por el cliente.
 
-Las cookies son HttpOnly y SameSite, y Secure en producción. CORS permite únicamente los orígenes declarados en `TELURIA_ALLOWED_ORIGINS`; las escrituras autenticadas comprueban también el encabezado `Origin`. El navegador no se conecta directamente a PostgreSQL ni a la Data API de Supabase.
+La cookie canónica `ark_session` es HttpOnly y SameSite, y Secure en producción. El backend acepta temporalmente la cookie heredada `teluria_session` y elimina ambas al cerrar sesión. CORS permite únicamente los orígenes declarados en `TELURIA_ALLOWED_ORIGINS`; las escrituras autenticadas comprueban también el encabezado `Origin`. El navegador no se conecta directamente a PostgreSQL ni a la Data API de Supabase.
 
 ## Integridad y límites
 

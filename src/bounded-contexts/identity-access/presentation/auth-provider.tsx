@@ -6,12 +6,12 @@ import {
   useEffect,
   useState,
   type ReactNode,
-  type FormEvent,
 } from "react";
-import { LogOut, Building2, ArrowRight, LoaderCircle } from "lucide-react";
+import { LogOut, LoaderCircle } from "lucide-react";
 import type { SessionUser } from "../index";
 import { requestJson } from "@/shared/infrastructure/rest-client";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
+import { AuthScreen, type AuthMode, type AuthPayload } from "./auth-screen";
 type Session = { user: SessionUser | null; setup_required?: boolean };
 const Auth = createContext<{
   user: SessionUser;
@@ -21,14 +21,14 @@ const Auth = createContext<{
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const [session, setSession] = useState<Session | null>(null),
-    [register, setRegister] = useState(false),
+    [mode, setMode] = useState<AuthMode>("login"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const refresh = useCallback(async () => {
     try {
       const next = await requestJson<Session>("/api/v1/sessions");
       setSession(next);
-      setRegister(!!next.setup_required);
+      setMode(next.setup_required ? "register" : "login");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -42,15 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener("ark:session-expired", expired);
     return () => window.removeEventListener("ark:session-expired", expired);
   }, []);
-  const submit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
+  const authenticate = async (nextMode: AuthMode, payload: AuthPayload) => {
     setBusy(true);
     setError("");
     try {
       const result = await requestJson<Session>(
-        register ? "/api/v1/users" : "/api/v1/sessions",
-        { method: "POST", body: JSON.stringify(Object.fromEntries(form)) },
+        nextMode === "register" ? "/api/v1/users" : "/api/v1/sessions",
+        { method: "POST", body: JSON.stringify(payload) },
       );
       setSession(result);
     } catch (e) {
@@ -59,14 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setBusy(false);
     }
   };
-  if (!session)
-    return (
-      <div className="collab-auth">
-        <div className="pm-card collab-auth-card">
+  if (!session) return (
+      <main className="auth-shell auth-loading">
+        <div className="auth-loading-card">
           {error ? (
             <>
               <p role="alert">{error}</p>
-              <button className="pm-button" onClick={() => void refresh()}>
+              <button className="auth-submit" onClick={() => void refresh()}>
                 {t("pm.retry")}
               </button>
             </>
@@ -77,84 +74,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             />
           )}
         </div>
-      </div>
-    );
-  if (!session.user)
-    return (
-      <div className="collab-auth">
-        <div className="collab-auth-story">
-          <Building2 size={40} />
-          <p className="pm-eyebrow">ARK · WORKSPACE</p>
-          <h1>{t("c.authTitle")}</h1>
-          <p>{t("c.authDescription")}</p>
-          <div className="collab-auth-points">
-            {["team", "schedule", "deliverables"].map((k) => (
-              <span key={k}>{t("c." + k)}</span>
-            ))}
-          </div>
-        </div>
-        <div className="pm-card collab-auth-card">
-          <h2>{t(register ? "c.createAccount" : "c.signIn")}</h2>
-          <p>
-            {t(session.setup_required ? "c.firstAccount" : "c.accountHelp")}
-          </p>
-          <form className="pm-form" onSubmit={submit}>
-            {register && (
-              <label className="pm-field">
-                <span>{t("pm.field.name")}</span>
-                <input
-                  name="name"
-                  required
-                  maxLength={100}
-                  autoComplete="name"
-                />
-              </label>
-            )}
-            <label className="pm-field">
-              <span>{t("c.email")}</span>
-              <input name="email" type="email" required autoComplete="email" />
-            </label>
-            <label className="pm-field">
-              <span>{t("c.password")}</span>
-              <input
-                name="password"
-                type="password"
-                required
-                minLength={register ? 12 : 1}
-                maxLength={128}
-                autoComplete={register ? "new-password" : "current-password"}
-              />
-              {register && <small>{t("c.passwordHelp")}</small>}
-            </label>
-            {error && (
-              <p className="pm-alert pm-danger" role="alert">
-                {error}
-              </p>
-            )}
-            <button disabled={busy} className="pm-button pm-primary">
-              {busy ? (
-                <LoaderCircle className="animate-spin" size={16} />
-              ) : (
-                <ArrowRight size={16} />
-              )}{" "}
-              {t(register ? "c.createAccount" : "c.signIn")}
-            </button>
-            {!session.setup_required && (
-              <button
-                type="button"
-                className="pm-text-button"
-                onClick={() => {
-                  setRegister(!register);
-                  setError("");
-                }}
-              >
-                {t(register ? "c.haveAccount" : "c.noAccount")}
-              </button>
-            )}
-          </form>
-        </div>
-      </div>
-    );
+      </main>
+  );
+  if (!session.user) return (
+    <AuthScreen
+      mode={mode}
+      setupRequired={!!session.setup_required}
+      busy={busy}
+      error={error}
+      onModeChange={(next) => { setMode(next); setError(""); }}
+      onAuthenticate={authenticate}
+    />
+  );
   return (
     <Auth.Provider
       value={{
