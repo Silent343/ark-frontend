@@ -1,4 +1,5 @@
 import { SimulationScreen } from "@/bounded-contexts/seismic-simulation/presentation/screens/simulation-screen";
+export const metadata = { title: "Simulación" };
 
 export default async function SimulationPage({
   params,

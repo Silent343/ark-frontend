@@ -2,7 +2,8 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, Bell, RefreshCw } from "lucide-react";
+import { useEffect } from "react";
+import { ArrowLeft, Bell, ChevronDown, Check, RefreshCw } from "lucide-react";
 import { useWorkspace } from "./workspace-context";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { WorkspaceSkeleton } from "./workspace-ui";
@@ -20,9 +21,9 @@ const projectAreas: Array<{ key: string; tabs: WorkspaceTab[] }> = [
   {
     key: "pm.nav.work",
     tabs: [
-      ["tasks", "pm.kanban"],
+      ["tasks", "pm.tasks"],
       ["schedule", "c.schedule"],
-      ["milestones", "pm.gantt"],
+      ["milestones", "pm.milestones"],
       ["team", "c.team"],
     ],
   },
@@ -68,6 +69,26 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
     pathname = usePathname(),
     router = useRouter(),
     { t } = useI18n();
+  useEffect(() => {
+    const dismiss = (event: Event) => {
+      document
+        .querySelectorAll<HTMLDetailsElement>(".workspace-area-menu[open]")
+        .forEach((menu) => {
+          if (
+            event instanceof KeyboardEvent
+              ? event.key === "Escape"
+              : !menu.contains(event.target as Node)
+          )
+            menu.open = false;
+        });
+    };
+    document.addEventListener("click", dismiss);
+    document.addEventListener("keydown", dismiss);
+    return () => {
+      document.removeEventListener("click", dismiss);
+      document.removeEventListener("keydown", dismiss);
+    };
+  }, []);
   if (loading) return <WorkspaceSkeleton />;
   if (!data)
     return (
@@ -115,7 +136,11 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
       <label className="collab-mobile-nav">
         <span>{t("pm.workspace")}</span>
         <select
-          value={client ? slug || "client-portal" : activeArea?.key ?? "pm.overview"}
+          value={
+            client
+              ? slug || "client-portal"
+              : (activeArea?.key ?? "pm.overview")
+          }
           onChange={(event) => {
             const destination = event.currentTarget.value;
             if (client) return router.push(root + "/" + destination);
@@ -126,12 +151,18 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
         >
           {client
             ? clientTabs.map(([path, key]) => (
-                <option key={path} value={path}>{t(key)}</option>
+                <option key={path} value={path}>
+                  {t(key)}
+                </option>
               ))
             : [
-                <option key="overview" value="pm.overview">{t("pm.overview")}</option>,
+                <option key="overview" value="pm.overview">
+                  {t("pm.overview")}
+                </option>,
                 ...projectAreas.map((area) => (
-                  <option key={area.key} value={area.key}>{t(area.key)}</option>
+                  <option key={area.key} value={area.key}>
+                    {t(area.key)}
+                  </option>
                 )),
               ]}
         </select>
@@ -144,33 +175,17 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
             onChange={(event) => router.push(root + "/" + event.target.value)}
           >
             {activeArea.tabs.map(([path, key]) => (
-              <option key={path} value={path}>{t(key)}</option>
+              <option key={path} value={path}>
+                {t(key)}
+              </option>
             ))}
           </select>
         </label>
       )}
       <nav className="collab-module-nav" aria-label={t("pm.workspace")}>
         <div className="collab-primary-views">
-          {client ? clientTabs.map(([path, key]) => (
-            <Link key={path} href={root + "/" + path} aria-current={slug === path ? "page" : undefined}>{t(key)}</Link>
-          )) : (
-            <>
-              <Link href={root} aria-current={!slug ? "page" : undefined}>{t("pm.overview")}</Link>
-              {projectAreas.map((area) => (
-                <Link
-                  key={area.key}
-                  href={root + "/" + area.tabs[0][0]}
-                  data-active={activeArea?.key === area.key ? "true" : undefined}
-                >
-                  {t(area.key)}
-                </Link>
-              ))}
-            </>
-          )}
-        </div>
-        {!client && activeArea && (
-          <div className="collab-context-views" role="group" aria-label={t("pm.nav.view")}>
-            {activeArea.tabs.map(([path, key]) => (
+          {client ? (
+            clientTabs.map(([path, key]) => (
               <Link
                 key={path}
                 href={root + "/" + path}
@@ -178,9 +193,54 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
               >
                 {t(key)}
               </Link>
-            ))}
-          </div>
-        )}
+            ))
+          ) : (
+            <>
+              <Link href={root} aria-current={!slug ? "page" : undefined}>
+                {t("pm.overview")}
+              </Link>
+              {projectAreas.map((area) => (
+                <details
+                  key={area.key}
+                  className="workspace-area-menu"
+                  data-active={
+                    activeArea?.key === area.key ? "true" : undefined
+                  }
+                >
+                  <summary>
+                    {t(area.key)}
+                    {activeArea?.key === area.key && (
+                      <span className="workspace-current-view">
+                        / {t(area.tabs.find(([path]) => path === slug)![1])}
+                      </span>
+                    )}
+                    <ChevronDown size={14} />
+                  </summary>
+                  <div className="workspace-area-popover">
+                    <span className="workspace-menu-heading">
+                      {t(area.key)}
+                    </span>
+                    {area.tabs.map(([path, key]) => (
+                      <Link
+                        key={path}
+                        href={root + "/" + path}
+                        aria-current={slug === path ? "page" : undefined}
+                        onClick={(event) => {
+                          event.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                        }}
+                      >
+                        {t(key)}
+                        {slug === path && <Check size={14} />}
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </>
+          )}
+        </div>
       </nav>
       {error && (
         <div role="alert" className="pm-alert pm-danger">

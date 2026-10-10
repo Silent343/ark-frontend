@@ -1,10 +1,19 @@
 import type { PlanReview } from "../domain/entities/blueprint";
+import type { CadEntity } from "../domain/entities/cad-plan";
 import type { PlanPoint } from "../domain/plan-calibration";
 
 export interface RasterPlan {
   canvas: HTMLCanvasElement;
   pageCount: number;
   text: PlanReview["text"];
+  cad?: {
+    entities: CadEntity[];
+    layers: Array<{ name: string; visible: boolean; count: number }>;
+    skipped: Record<string, number>;
+    entityCount: number;
+    renderLayers: (visibleLayers: string[]) => Promise<{ canvas: HTMLCanvasElement; text: PlanReview["text"] }>;
+    dispose: () => void;
+  };
 }
 const MAX_SIDE = 1400;
 
@@ -23,9 +32,14 @@ export function createPlanCanvas(width: number, height: number) {
 export async function loadPlanSource(
   file: File,
   pageNumber = 1,
+  signal?: AbortSignal,
 ): Promise<RasterPlan> {
   if (file.size > 12 * 1024 * 1024)
     throw new Error("Maximum file size: 12 MB.");
+  if (/\.(dwg|dxf)$/i.test(file.name)) {
+    const { loadCadPlanSource } = await import("./browser-cad-source");
+    return loadCadPlanSource(file, signal);
+  }
   if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
     const pdf = await import("pdfjs-dist");
     pdf.GlobalWorkerOptions.workerSrc = "/vendor/plan-tools/pdf.worker.min.mjs";
@@ -96,6 +110,8 @@ export function preparePlanImage(
   degrees: number,
   contrast: number,
   denoise: boolean,
+  grayscale = true,
+  maxSide = MAX_SIDE,
 ) {
   const angle = (degrees * Math.PI) / 180;
   const boundW =
@@ -104,12 +120,13 @@ export function preparePlanImage(
   const boundH =
     Math.abs(source.width * Math.sin(angle)) +
     Math.abs(source.height * Math.cos(angle));
-  const scale = Math.min(1, MAX_SIDE / Math.max(boundW, boundH));
+  const scale = Math.min(1, maxSide / Math.max(boundW, boundH));
   const { canvas, context } = createPlanCanvas(boundW * scale, boundH * scale);
   context.translate(canvas.width / 2, canvas.height / 2);
   context.rotate(angle);
   context.scale(scale, scale);
-  context.filter = `grayscale(1) contrast(${contrast}%)`;
+  // Keep a CAD drawing's original layer colors; raster scans benefit from monochrome cleanup.
+  context.filter = `${grayscale ? "grayscale(1) " : ""}contrast(${contrast}%)`;
   context.drawImage(source, -source.width / 2, -source.height / 2);
   context.resetTransform();
   context.filter = "none";

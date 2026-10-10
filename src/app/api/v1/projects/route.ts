@@ -1,8 +1,0 @@
-import { handleWorkspaceRequest } from "@/composition/infrastructure/workspace-rest";
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-/** Thin Next.js delivery adapter for versioned REST resources. */
-async function handle(request: Request) {
-  return handleWorkspaceRequest(request, {});
-}
-export { handle as GET, handle as POST, handle as PATCH, handle as DELETE };

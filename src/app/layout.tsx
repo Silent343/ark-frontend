@@ -26,7 +26,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <I18nProvider>
           <PreferencesBootstrap />
           <ErrorBoundary>
-            <AuthProvider><AppShell>{children}</AppShell></AuthProvider>
+            <AuthProvider><AppShell previewMode={process.env.ARK_LOCAL_PREVIEW === "1"}>{children}</AppShell></AuthProvider>
           </ErrorBoundary>
         </I18nProvider>
       </body>

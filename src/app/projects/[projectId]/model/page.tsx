@@ -1,4 +1,5 @@
 import { ModelScreen } from "@/bounded-contexts/spatial-visualization/presentation/screens/model-screen";
+export const metadata = { title: "Estudio 3D" };
 
 export default async function ModelPage({
   params,

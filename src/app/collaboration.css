@@ -464,8 +464,8 @@
   align-items: stretch;
   gap: 4px;
   min-height: 46px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--pm-border);
+  flex-wrap: wrap;
+  overflow: visible;
 }
 .collab-primary-views a,
 .collab-context-views a {
@@ -514,6 +514,69 @@
 }
 .collab-mobile-nav,
 .collab-mobile-subnav {
+  display: none;
+}
+/* One navigation row keeps project areas and the current view in the same context. */
+.workspace-area-menu {
+  position: relative;
+}
+.workspace-area-menu summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 14px;
+  color: var(--pm-muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 8px 8px 0 0;
+}
+.workspace-area-menu summary::-webkit-details-marker {
+  display: none;
+}
+.workspace-area-menu summary:hover,
+.workspace-area-menu[open] summary {
+  background: var(--pm-subtle);
+  color: var(--pm-text);
+}
+.workspace-area-menu[data-active="true"] summary {
+  color: var(--pm-accent);
+  box-shadow: inset 0 -2px var(--pm-accent);
+  font-weight: 650;
+}
+.workspace-current-view {
+  font-weight: 400;
+}
+.workspace-area-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 230px;
+  padding: 7px;
+  z-index: 60;
+  background: var(--pm-surface, #fff);
+  border: 1px solid var(--pm-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px #0d18301c;
+}
+.workspace-menu-heading {
+  display: block;
+  padding: 7px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--pm-muted);
+}
+.collab-primary-views .workspace-area-popover a {
+  display: flex;
+  justify-content: space-between;
+  min-height: 38px;
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+.collab-primary-views .workspace-area-popover a::after {
   display: none;
 }
 @media (max-width: 700px) {

@@ -1,4 +1,5 @@
 import dynamic from "next/dynamic";
+export const metadata = { title: "Hitos" };
 import { WorkspaceSkeleton } from "@/composition/presentation/workspace-ui";
 const Screen = dynamic(
   () =>

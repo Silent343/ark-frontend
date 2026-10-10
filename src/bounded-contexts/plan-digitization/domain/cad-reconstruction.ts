@@ -1,0 +1,793 @@
+import type { Blueprint, Opening } from "./entities/blueprint";
+import type {
+  CadEntity,
+  CadPlan,
+  CadRegion,
+  CadRole,
+} from "./entities/cad-plan";
+import { cadEntityBounds } from "./cad-operations";
+import { convexHull, detectFloorSurfaces } from "./cad-floor-mask";
+import {
+  contains,
+  direction,
+  distance,
+  dot,
+  floorFaces,
+  lineDistance,
+  mergeLines,
+  orientedBox,
+  plus,
+  project,
+  reconstructWalls,
+  registerPlan,
+  sub,
+  type PlanLine,
+  type Point2,
+} from "./cad-topology";
+
+const PX = 60;
+type SymbolGroup = { role: CadRole; entities: CadEntity[]; points: Point2[] };
+const midpoint = (l: PlanLine): Point2 => [
+  (l.a[0] + l.b[0]) / 2,
+  (l.a[1] + l.b[1]) / 2,
+];
+const normalize = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+function pointsOf(e: CadEntity, units: number): Point2[] {
+  if (e.kind === "path")
+    return e.points.flatMap((x, i) =>
+      i % 2 ? [] : [[x * units, e.points[i + 1] * units] as Point2],
+    );
+  if (e.kind === "circle")
+    return Array.from(
+      { length: 16 },
+      (_, i) =>
+        [
+          (e.x + Math.cos((i * Math.PI) / 8) * e.radius) * units,
+          (e.y + Math.sin((i * Math.PI) / 8) * e.radius) * units,
+        ] as Point2,
+    );
+  return [[e.x * units, e.y * units]];
+}
+function linesOf(entities: CadEntity[], units: number): PlanLine[] {
+  return entities.flatMap((e) => {
+    if (e.kind !== "path") return [];
+    const p = pointsOf(e, units);
+    if (e.closed) p.push(p[0]);
+    return p
+      .slice(1)
+      .map((b, i) => ({ a: p[i], b, thickness: 0, source: e.id }))
+      .filter((l) => distance(l.a, l.b) > 0.025);
+  });
+}
+function inRegion(e: CadEntity, r: CadRegion, margin = 0.02) {
+  const b = cadEntityBounds(e),
+    x = (b.minX + b.maxX) / 2,
+    y = (b.minY + b.maxY) / 2;
+  return (
+    x >= r.minX - margin &&
+    x <= r.maxX + margin &&
+    y >= r.minY - margin &&
+    y <= r.maxY + margin
+  );
+}
+
+/** Explicit finished-floor labels take precedence over the project's default storey height. */
+export function floorElevations(entities: CadEntity[]): number[] {
+  const votes = new Map<number, number>();
+  for (const e of entities) {
+    if (e.kind !== "text") continue;
+    const match = normalize(e.value)
+      .replace(/\+\s*-/g, "")
+      .match(/N\.?P\.?T\.?\s*[:=]?\s*([+-]?\s*\d+(?:[.,]\d+)?)/);
+    if (!match) continue;
+    const value = Number(match[1].replace(/\s/g, "").replace(",", "."));
+    if (Number.isFinite(value) && Math.abs(value) < 1000)
+      votes.set(value, (votes.get(value) ?? 0) + 1);
+  }
+  return [...votes].sort((a, b) => b[1] - a[1]).map(([v]) => v);
+}
+
+/** Keep source blocks when compact. For exploded symbols, cluster touching strokes within the same semantic role. */
+export function symbols(
+  entities: CadEntity[],
+  role: CadRole,
+  units: number,
+): SymbolGroup[] {
+  const groups: CadEntity[][] = [];
+  const rows = entities
+    .filter((e) => e.kind !== "text")
+    .map((e) => ({ e, b: cadEntityBounds(e) }))
+    .sort((a, b) => a.b.minX - b.b.minX);
+  const parent = rows.map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+  const tolerance = 0.018 / units;
+  for (let i = 0; i < rows.length; i++)
+    for (let j = i + 1; j < rows.length; j++) {
+      const a = rows[i].b,
+        b = rows[j].b;
+      if (b.minX > a.maxX + tolerance) break;
+      if (b.minY > a.maxY + tolerance || b.maxY < a.minY - tolerance) continue;
+      parent[find(j)] = find(i);
+    }
+  const indexed = new Map<number, CadEntity[]>();
+  rows.forEach(({ e }, i) => {
+    const key = find(i);
+    if (!indexed.has(key)) indexed.set(key, []);
+    indexed.get(key)!.push(e);
+  });
+  groups.push(...indexed.values());
+  return groups.map((items) => ({
+    role,
+    entities: items,
+    points: items.flatMap((e) => pointsOf(e, units)),
+  }));
+}
+
+function findOpening(
+  group: SymbolGroup,
+  walls: PlanLine[],
+  supports: Point2[],
+  units: number,
+): { wall: PlanLine; center: Point2; width: number } | null {
+  let best: {
+    wall: PlanLine;
+    center: Point2;
+    width: number;
+    score: number;
+  } | null = null;
+  // Existing plan gaps are strong evidence: their jambs specify orientation and exact opening width.
+  for (let i = 0; i < walls.length; i++)
+    for (let j = i + 1; j < walls.length; j++) {
+      const a = walls[i],
+        b = walls[j];
+      if (distance(a.a, a.b) < 0.1 || distance(b.a, b.b) < 0.1) continue;
+      if (
+        Math.abs(dot(direction(a), direction(b))) < 0.999 ||
+        lineDistance(b.a, a) > Math.max(0.08, a.thickness * 0.35)
+      )
+        continue;
+      const length = distance(a.a, a.b),
+        positions = [project(b.a, a), project(b.b, a)].sort((x, y) => x - y);
+      const start = positions[0] > length ? length : positions[1],
+        end = positions[0] > length ? positions[0] : 0;
+      const width = end - start;
+      if (
+        width < 0.35 ||
+        width > 4 ||
+        (positions[0] <= length && positions[1] >= 0)
+      )
+        continue;
+      const p = group.points.map((v) => project(v, a)),
+        low = Math.min(...p),
+        high = Math.max(...p);
+      const center = plus(a.a, direction(a), start + width / 2);
+      const near = Math.min(...group.points.map((v) => distance(v, center)));
+      if (
+        low > start + 0.2 ||
+        high < end - 0.2 ||
+        near > Math.max(0.5, width * 0.7) ||
+        high - low > width + 0.65
+      )
+        continue;
+      const score = Math.abs(high - low - width) + near * 0.25;
+      if (!best || score < best.score)
+        best = {
+          wall: {
+            ...a,
+            a: plus(a.a, direction(a), start),
+            b: plus(a.a, direction(a), end),
+            source: group.entities[0].id,
+          },
+          center,
+          width,
+          score,
+        };
+    }
+  if (best) {
+    walls.push(best.wall);
+    return best;
+  }
+  // A jamb may end at a perpendicular wall or column instead of a second parallel wall.
+  // Test symbol-oriented edges, requiring physical support at BOTH ends before creating a host.
+  for (const stroke of linesOf(group.entities, units).filter(
+    (l) => distance(l.a, l.b) > 0.4,
+  )) {
+    const u = direction(stroke),
+      box = orientedBox(group.points, Math.atan2(u[1], u[0]));
+    for (let i = 0; i < 4; i++) {
+      const a = box.corners[i],
+        b = box.corners[(i + 1) % 4],
+        width = distance(a, b);
+      if (width < 0.45 || width > 4) continue;
+      const edge: PlanLine = {
+        a,
+        b,
+        thickness: 0.15,
+        source: group.entities[0].id,
+      };
+      const ends = [...supports, ...walls.flatMap((w) => [w.a, w.b])];
+      const da = Math.min(...ends.map((p) => distance(p, a))),
+        db = Math.min(...ends.map((p) => distance(p, b)));
+      if (da > 0.3 || db > 0.3) continue;
+      const host = walls.find(
+        (w) =>
+          Math.abs(dot(direction(w), direction(edge))) > 0.995 &&
+          lineDistance(a, w) < 0.24 &&
+          Math.min(
+            distance(a, w.a),
+            distance(a, w.b),
+            distance(b, w.a),
+            distance(b, w.b),
+          ) < 0.4,
+      );
+      if (!host) continue;
+      const score = da + db + lineDistance(a, host);
+      if (!best || score < best.score) {
+        const offset = sub(
+          plus(host.a, direction(host), project(midpoint(edge), host)),
+          midpoint(edge),
+        );
+        const bridge = {
+          ...edge,
+          a: plus(a, offset, 1),
+          b: plus(b, offset, 1),
+          thickness: host.thickness,
+        };
+        best = { wall: bridge, center: midpoint(bridge), width, score };
+      }
+    }
+  }
+  if (best) {
+    walls.push(best.wall);
+    return best;
+  }
+  // Windows can also be drawn across a continuous wall. Projection removes symbol offsets and swing arcs.
+  for (const wall of walls) {
+    if (distance(wall.a, wall.b) < 0.1) continue;
+    const projections = group.points.map((v) => project(v, wall)),
+      low = Math.min(...projections),
+      high = Math.max(...projections),
+      width = high - low;
+    if (
+      width < 0.45 ||
+      width > 4 ||
+      low < -0.06 ||
+      high > distance(wall.a, wall.b) + 0.06
+    )
+      continue;
+    const distances = group.points.map((v) => lineDistance(v, wall)),
+      near = Math.min(...distances),
+      far = Math.max(...distances);
+    if (
+      near > wall.thickness / 2 + 0.09 ||
+      far > (group.role === "window" ? 0.5 : width + 0.15)
+    )
+      continue;
+    const score = near + far * (group.role === "window" ? 1 : 0.15);
+    if (!best || score < best.score)
+      best = {
+        wall,
+        center: plus(wall.a, direction(wall), (low + high) / 2),
+        width,
+        score,
+      };
+  }
+  return best;
+}
+
+/** Parallel, regularly spaced treads identify individual flights, including rotated switchbacks. */
+function stairFlights(entities: CadEntity[], units: number) {
+  const lines = mergeLines(linesOf(entities, units), -0.03).filter((l) => {
+    const n = distance(l.a, l.b);
+    return n >= 0.65 && n <= 2.1;
+  });
+  const used = new Set<number>();
+  const flights: Array<{
+    center: Point2;
+    corners: Point2[];
+    width: number;
+    length: number;
+    angle: number;
+    steps: number;
+  }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (used.has(i)) continue;
+    const a = lines[i],
+      u = direction(a),
+      n: Point2 = [-u[1], u[0]],
+      origin = midpoint(a);
+    const neighbors = lines
+      .map((l, index) => ({ l, index, pos: dot(sub(midpoint(l), origin), n) }))
+      .filter(
+        ({ l, index }) =>
+          !used.has(index) &&
+          Math.abs(dot(direction(l), u)) > 0.999 &&
+          Math.abs(dot(sub(midpoint(l), origin), u)) < 0.12 &&
+          Math.abs(distance(l.a, l.b) - distance(a.a, a.b)) < 0.22,
+      )
+      .sort((x, y) => x.pos - y.pos);
+    let run: typeof neighbors = [];
+    const finish = () => {
+      if (run.length < 4) return;
+      const gaps = run
+          .slice(1)
+          .map((p, index) => p.pos - run[index].pos)
+          .sort((x, y) => x - y),
+        tread = gaps[Math.floor(gaps.length / 2)];
+      const angle = Math.atan2(u[1], u[0]),
+        box = orientedBox(
+          run.flatMap(({ l }) => [l.a, l.b]),
+          angle,
+        );
+      if (box.depth < 0.6) return;
+      flights.push({
+        center: box.center,
+        corners: orientedBox(
+          [
+            plus(box.corners[0], n, -tread / 2),
+            plus(box.corners[2], n, tread / 2),
+          ],
+          angle,
+        ).corners,
+        width: box.width,
+        length: box.depth + tread,
+        angle: Math.atan2(n[1], n[0]),
+        steps: run.length,
+      });
+      run.forEach(({ index }) => used.add(index));
+    };
+    for (const item of neighbors) {
+      if (
+        run.length &&
+        (item.pos - run.at(-1)!.pos > 0.38 || item.pos - run.at(-1)!.pos < 0.13)
+      ) {
+        finish();
+        run = [];
+      }
+      run.push(item);
+    }
+    finish();
+  }
+  return flights;
+}
+
+/** One calibrated model is compiled from evidence shared by 2D and 3D. Source CAD entities remain untouched. */
+export function compileCadBlueprint(
+  base: Blueprint,
+  cad: CadPlan,
+  defaultHeight = 2.8,
+): Blueprint {
+  const units = cad.metersPerCadUnit,
+    roles = new Map(cad.layers.map((l) => [l.name, l.role]));
+  const plans = cad.regions
+    .filter((r) => r.enabled)
+    .map((region) => {
+      const entities = cad.entities.filter((e) => inRegion(e, region));
+      const raw = linesOf(
+        entities.filter((e) => roles.get(e.layer) === "wall"),
+        units,
+      );
+      // Structural layers can contain both compact columns and long shear walls. Paired faces distinguish them from grid axes.
+      const structural = reconstructWalls(
+        linesOf(
+          entities.filter((e) => roles.get(e.layer) === "column"),
+          units,
+        ),
+      ).filter((w) => w.paired && distance(w.a, w.b) > 1.3);
+      return {
+        region,
+        entities,
+        raw,
+        structural,
+        walls: mergeLines(
+          [...reconstructWalls(raw), ...structural],
+          0.06,
+          0.025,
+        ),
+        center: [
+          ((region.minX + region.maxX) * units) / 2,
+          ((region.minY + region.maxY) * units) / 2,
+        ] as Point2,
+      };
+    });
+  const reference = [...plans].sort(
+    (a, b) =>
+      b.region.repeat - a.region.repeat || b.walls.length - a.walls.length,
+  )[0];
+  const next: Blueprint = {
+    ...base,
+    cad,
+    sourceImage: undefined,
+    sourceSize: undefined,
+    sourceOffset: undefined,
+    sheets: [],
+    rooms: [],
+    walls: [],
+    doors: [],
+    windows: [],
+    columns: [],
+    stairs: [],
+    roofs: [],
+    services: [],
+    routes: [],
+    fixtures: [],
+    slabs: [],
+    floorDetails: [],
+    levels: [],
+    width: 4000,
+    height: 4000,
+    scale: `${units} m / unidad CAD`,
+    calibration: {
+      metersPerUnit: 1 / PX,
+      referencePoints: [
+        [0, 0],
+        [600, 0],
+      ],
+      referenceDistanceM: 10,
+    },
+    review: {
+      sourceName: cad.sourceName,
+      page: 1,
+      method: "manual-tracing",
+      status: "draft",
+      reviewedIds: [],
+      text: [],
+      warnings: ["cad-semantic-review"],
+    },
+    reconstruction: {
+      version: 2,
+      pairedWalls: 0,
+      sourceEdges: plans.reduce((n, p) => n + p.raw.length, 0),
+      alignedPlans: 0,
+      namedSpaces: 0,
+    },
+  };
+  if (!reference) {
+    next.levels = [
+      { id: "level-1", name: "Sin plantas asignadas", elevation: 0 },
+    ];
+    return next;
+  }
+  // Read NPT only during detection; user-edited region elevations always remain authoritative here.
+  const levels = plans
+    .flatMap((p) =>
+      Array.from({ length: p.region.repeat }, (_, floor) => ({
+        plan: p,
+        floor,
+        elevation:
+          p.region.elevations?.[floor] ??
+          p.region.elevation + floor * defaultHeight,
+      })),
+    )
+    .sort((a, b) => a.elevation - b.elevation);
+  for (const plan of plans) {
+    const { region, entities } = plan;
+    const registration =
+      plan === reference
+        ? { offset: [0, 0] as Point2, matched: Infinity }
+        : registerPlan(
+            plan.walls,
+            reference.walls,
+            sub(reference.center, plan.center),
+          );
+    if (registration.matched) next.reconstruction!.alignedPlans++;
+    const toPlan = (p: Point2): Point2 => [
+      2000 + (p[0] + registration.offset[0] - reference.center[0]) * PX,
+      2000 - (p[1] + registration.offset[1] - reference.center[1]) * PX,
+    ];
+    let walls = plan.walls.map((w) => ({
+      ...w,
+      a: [...w.a] as Point2,
+      b: [...w.b] as Point2,
+    }));
+    // Column layers often contain long grid axes too. Only closed, compact structural contours become columns.
+    const columnContours = floorFaces(
+      linesOf(
+        entities.filter((e) => roles.get(e.layer) === "column"),
+        units,
+      ).filter((l) => distance(l.a, l.b) <= 1.6),
+      0.025,
+    );
+    const columns = columnContours
+      .map((points) => {
+        const edge = points
+          .map((a, i) => ({
+            a,
+            b: points[(i + 1) % points.length],
+            thickness: 0,
+            source: "column",
+          }))
+          .sort((a, b) => distance(b.a, b.b) - distance(a.a, a.b))[0];
+        const d = direction(edge),
+          angle = Math.atan2(d[1], d[0]);
+        return { ...orientedBox(points, angle), angle };
+      })
+      .filter(
+        (c) =>
+          Math.min(c.width, c.depth) >= 0.12 &&
+          Math.max(c.width, c.depth) <= 1.3,
+      );
+    for (const wall of walls)
+      for (const column of columns) {
+        const reach = Math.hypot(column.width, column.depth) / 2 + 0.12;
+        // Extend on the original axis: snapping to the column centre would rotate the wall and its openings.
+        const projected = plus(
+          wall.a,
+          direction(wall),
+          project(column.center, wall),
+        );
+        if (distance(wall.a, column.center) < reach) wall.a = projected;
+        if (distance(wall.b, column.center) < reach) wall.b = projected;
+      }
+    walls = walls.filter((w) => distance(w.a, w.b) > 0.1);
+    const proposals: Array<{
+      group: SymbolGroup;
+      match: NonNullable<ReturnType<typeof findOpening>>;
+    }> = [];
+    const openingGroups = (["window", "door"] as const).flatMap((role) =>
+      symbols(
+        entities.filter((e) => roles.get(e.layer) === role),
+        role,
+        units,
+      ),
+    );
+    for (const group of openingGroups) {
+      const match = findOpening(
+        group,
+        walls,
+        columns.flatMap((c) => c.corners),
+        units,
+      );
+      if (
+        match &&
+        !proposals.some((p) => distance(p.match.center, match.center) < 0.12)
+      )
+        proposals.push({ group, match });
+    }
+    const labels = entities.filter(
+      (e): e is Extract<CadEntity, { kind: "text" }> => e.kind === "text",
+    );
+    const floorSurfaces = detectFloorSurfaces(
+      [...plan.raw, ...plan.structural, ...proposals.map((p) => p.match.wall)],
+      [
+        ...columns.map((c) => c.corners),
+        ...openingGroups
+          .filter((g) => {
+            const box = orientedBox(g.points, 0);
+            return Math.max(box.width, box.depth) < 4.5;
+          })
+          .map((g) => convexHull(g.points)),
+      ],
+      labels.map((e) => ({
+        point: [e.x * units, e.y * units],
+        name: e.value,
+        void: /VACIO|POZO|SHAFT|DUCTO|ASCENSOR/.test(normalize(e.value)),
+        room: /DORMITORIO|SALA|COCINA|COMEDOR|BA[ÑN]O|PASILLO|PALIER|LOCAL|LAVANDER|ESTACIONAMIENTO|CIRCULACION|DEPOSITO/.test(
+          normalize(e.value),
+        ),
+      })),
+    );
+    const flights = stairFlights(
+      entities.filter((e) => roles.get(e.layer) === "stair"),
+      units,
+    );
+    const roofContours = floorFaces(
+      linesOf(
+        entities.filter((e) => roles.get(e.layer) === "roof"),
+        units,
+      ),
+    );
+    const installations = (["electrical", "plumbing"] as const)
+      .flatMap((role) =>
+        symbols(
+          entities.filter((e) => roles.get(e.layer) === role),
+          role,
+          units,
+        ),
+      )
+      .filter((g) => {
+        const b = orientedBox(g.points, 0);
+        return Math.max(b.width, b.depth) < 2;
+      });
+    const details = linesOf(
+      entities.filter((e) => roles.get(e.layer) === "furniture"),
+      units,
+    ).flatMap((l) => [...toPlan(l.a), ...toPlan(l.b)]);
+    for (let floor = 0; floor < region.repeat; floor++) {
+      const levelId = `${region.id}-${floor}`,
+        entry = levels.findIndex((l) => l.plan === plan && l.floor === floor),
+        elevation = levels[entry].elevation;
+      const nextElevation = levels[entry + 1]?.elevation,
+        height =
+          nextElevation !== undefined
+            ? Math.max(2.2, Math.min(6, nextElevation - elevation))
+            : defaultHeight;
+      const terrace = /TERRAZA|AZOTEA/.test(normalize(region.name));
+      const floorNumber = Number(region.name.match(/\d+/)?.[0]);
+      next.levels.push({
+        id: levelId,
+        name:
+          region.repeat > 1 && floorNumber
+            ? `Planta ${floorNumber + floor}`
+            : region.name,
+        elevation,
+        height,
+      });
+      const wallIds = new Map(walls.map((w, i) => [w, `wall-${levelId}-${i}`]));
+      for (const wall of walls) {
+        let wallHeight = terrace ? 1.2 : height;
+        const notes = labels
+          .flatMap((e) => {
+            const text = normalize(e.value),
+              match = text.match(
+                /(?:PARAPETO|ROMPE\s?VISTA).*?(?:H\s*=\s*)?(\d+[.,]\d+)\s*M/,
+              );
+            return match
+              ? [
+                  {
+                    point: [e.x * units, e.y * units] as Point2,
+                    height: Number(match[1].replace(",", ".")),
+                  },
+                ]
+              : [];
+          })
+          .filter(
+            (note) =>
+              lineDistance(note.point, wall) < 2.5 &&
+              project(note.point, wall) > -0.2 &&
+              project(note.point, wall) < distance(wall.a, wall.b) + 0.2,
+          )
+          .sort(
+            (a, b) => lineDistance(a.point, wall) - lineDistance(b.point, wall),
+          );
+        if (notes[0]) wallHeight = Math.min(height, notes[0].height);
+        next.walls.push({
+          id: wallIds.get(wall)!,
+          levelId,
+          start: toPlan(wall.a),
+          end: toPlan(wall.b),
+          thickness: wall.thickness * PX,
+          height: wallHeight,
+        });
+        if (wall.paired) next.reconstruction!.pairedWalls++;
+      }
+      for (const { group, match } of proposals) {
+        const [x, y] = toPlan(match.center),
+          u = direction(match.wall);
+        const opening: Opening = {
+          id: `${group.role}-${levelId}-${group.entities[0].id}`,
+          levelId,
+          wallId: wallIds.get(match.wall)!,
+          x,
+          y,
+          width: match.width * PX,
+          rotation: (-Math.atan2(u[1], u[0]) * 180) / Math.PI,
+          height: group.role === "door" ? Math.min(2.1, height - 0.2) : 1.2,
+          sillHeight: group.role === "door" ? 0 : 0.9,
+        };
+        (group.role === "door" ? next.doors : next.windows).push(opening);
+      }
+      for (const [i, surface] of floorSurfaces.surfaces.entries()) {
+        const stairHoles = flights
+          .filter(
+            (f) =>
+              f.corners.every((p) => contains(p, surface.polygon)) &&
+              !surface.holes.some(
+                (h) =>
+                  f.corners.some((p) => contains(p, h)) ||
+                  h.some((p) => contains(p, f.corners)),
+              ),
+          )
+          .map((f) => f.corners);
+        next.slabs!.push({
+          id: `slab-${levelId}-${i}`,
+          levelId,
+          name: "Losa del nivel",
+          polygon: surface.polygon.map(toPlan),
+          holes: [...surface.holes, ...stairHoles].map((h) => h.map(toPlan)),
+          thickness: 0.18,
+        });
+      }
+      for (const [i, room] of floorSurfaces.rooms.entries()) {
+        const points = room.polygon.map(toPlan),
+          xs = points.map((p) => p[0]),
+          ys = points.map((p) => p[1]);
+        next.rooms.push({
+          id: `space-${levelId}-${i}`,
+          levelId,
+          name: room.name,
+          x: Math.min(...xs),
+          y: Math.min(...ys),
+          width: Math.max(...xs) - Math.min(...xs),
+          height: Math.max(...ys) - Math.min(...ys),
+          area: room.area,
+        });
+        next.reconstruction!.namedSpaces++;
+      }
+      for (const [i, box] of columns.entries()) {
+        const [x, y] = toPlan(box.center);
+        next.columns.push({
+          id: `column-${levelId}-${i}`,
+          levelId,
+          x,
+          y,
+          size: box.width * PX,
+          depth: box.depth * PX,
+          rotation: (-box.angle * 180) / Math.PI,
+          height,
+        });
+      }
+      for (const [i, polygon] of roofContours.entries()) {
+        const points = polygon.map(toPlan),
+          b = orientedBox(points, 0);
+        next.roofs!.push({
+          id: `roof-${levelId}-${i}`,
+          levelId,
+          name: "Cubierta CAD",
+          x: b.center[0] - b.width / 2,
+          y: b.center[1] - b.depth / 2,
+          width: b.width,
+          depth: b.depth,
+          polygon: points,
+          thickness: 0.16,
+          elevation: height,
+        });
+      }
+      for (const [i, group] of installations.entries()) {
+        const [x, y] = toPlan(orientedBox(group.points, 0).center);
+        next.services!.push({
+          id: `service-${levelId}-${i}`,
+          levelId,
+          x,
+          y,
+          name:
+            group.role === "electrical"
+              ? "Símbolo eléctrico por revisar"
+              : "Símbolo sanitario por revisar",
+          kind: group.role === "electrical" ? "outlet" : "water",
+        });
+      }
+      if (nextElevation !== undefined)
+        flights.forEach((flight, i) => {
+          const partner = flights.findIndex(
+            (other, j) =>
+              j !== i &&
+              distance(other.center, flight.center) < 3.8 &&
+              Math.abs(Math.sin(other.angle - flight.angle)) < 0.15,
+          );
+          const paired = partner !== -1,
+            second = paired && i > partner,
+            [x, y] = toPlan(flight.center);
+          next.stairs!.push({
+            id: `stair-${levelId}-${i}`,
+            levelId,
+            x,
+            y,
+            radius: (flight.width * PX) / 2,
+            type: "straight",
+            length: flight.length * PX,
+            rotation:
+              (-(Math.PI / 2 + flight.angle + (second ? Math.PI : 0)) * 180) /
+              Math.PI,
+            rise: paired ? height / 2 : height,
+            baseElevation: second ? height / 2 : 0,
+            stepCount: flight.steps,
+          });
+        });
+      next.floorDetails!.push({ levelId, segments: details });
+    }
+  }
+  next.levels.sort((a, b) => a.elevation - b.elevation);
+  return next;
+}

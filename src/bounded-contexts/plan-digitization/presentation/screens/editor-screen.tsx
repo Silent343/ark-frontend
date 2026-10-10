@@ -58,6 +58,7 @@ import {
   planTopologyIssues,
 } from "../../domain/plan-review";
 import { PlanImportDialog } from "../components/plan-import-dialog";
+import { CadEditor } from "../components/cad-editor";
 import { PlanSourceReviewPanel } from "../components/plan-source-review-panel";
 import { metersPerUnit } from "../../domain/plan-calibration";
 import { sourceSheetForElement } from "../../domain/plan-provenance";
@@ -279,6 +280,7 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     editedBlueprint?.projectId === data.blueprint.projectId
       ? editedBlueprint
       : data.blueprint;
+  if (blueprint.cad) return <CadEditor blueprint={blueprint} projectName={data.project.name} floorHeight={data.project.floorHeight} editMode={editMode} members={managementData?.coordination.members ?? []} />;
   const levelId = blueprint.levels.some((item) => item.id === activeLevelId)
     ? activeLevelId : (blueprint.levels.find((item) => item.elevation === 0)?.id ?? blueprint.levels[0].id);
   const currentSheet = blueprint.sheets?.find((item) => item.id === activeSheetId && item.levelId === levelId)

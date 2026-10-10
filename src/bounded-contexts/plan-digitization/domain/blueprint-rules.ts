@@ -25,7 +25,7 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
     if (!Array.isArray(evidence.text) || evidence.text.length > 1000) invalid();
     for (const item of evidence.text as Record<string, unknown>[]) {
       if (!item || typeof item.text !== "string" || item.text.length > 200 ||
-        !["pdf", "ocr"].includes(String(item.source))) invalid();
+        !["pdf", "ocr", "cad"].includes(String(item.source))) invalid();
       for (const key of ["x", "y", "width", "height", "confidence"]) number(item[key]);
       if (Number(item.confidence) < 0 || Number(item.confidence) > 100) invalid();
     }
@@ -43,9 +43,10 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
     "services",
     "routes",
     "sheets",
+    "slabs",
   ];
   for (const key of collections) {
-    const rows = value[key] ?? (["stairs", "roofs", "services", "routes", "sheets"].includes(key) ? [] : null);
+    const rows = value[key] ?? (["stairs", "roofs", "services", "routes", "sheets", "slabs"].includes(key) ? [] : null);
     if (!Array.isArray(rows) || rows.length > 10000) invalid();
     if (key === "sheets" && (rows as unknown[]).length > 24) invalid();
     for (const item of rows as unknown[]) {
@@ -56,7 +57,18 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
       ids.add(row.id as string);
       if (key === "levels") {
         number(row.elevation);
+        if (row.height !== undefined) number(row.height, true);
         if (typeof row.name !== "string" || !row.name.trim()) invalid();
+      } else if (key === "slabs") {
+        number(row.thickness, true);
+        if (Number(row.thickness) > 2 || !Array.isArray(row.holes) || row.holes.length > 200) invalid();
+        for (const polygon of [row.polygon, ...(row.holes as unknown[])]) {
+          if (!Array.isArray(polygon) || polygon.length < 3 || polygon.length > 10000) invalid();
+          for (const point of polygon as unknown[]) {
+            if (!Array.isArray(point) || point.length !== 2) invalid();
+            (point as unknown[]).forEach(v => number(v));
+          }
+        }
       } else if (key === "sheets") {
         if (!['architecture', 'structure', 'electrical', 'plumbing'].includes(String(row.discipline)) ||
           typeof row.name !== 'string' || !row.name.trim() || row.name.length > 200 ||
@@ -109,9 +121,16 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
           )
             invalid();
         }
-        if (key === "columns") number(row.size, true);
+        if (key === "columns") {
+          number(row.size, true);
+          for (const field of ["depth", "height"]) if (row[field] !== undefined) number(row[field], true);
+          if (row.rotation !== undefined) number(row.rotation);
+        }
         if (key === "stairs") {
           number(row.radius, true);
+          if (row.rise !== undefined) number(row.rise, true);
+          if (row.baseElevation !== undefined) number(row.baseElevation);
+          if (row.stepCount !== undefined && (!Number.isInteger(row.stepCount) || Number(row.stepCount) < 1 || Number(row.stepCount) > 200)) invalid();
           if (row.type !== "spiral" && row.type !== "straight") invalid();
           if (row.type === "straight") {
             number(row.length, true);
@@ -129,7 +148,7 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
     (value.levels as {id:string}[])[0]).id;
   for (const key of collections.filter((item) => item !== 'levels')) {
     for (const row of (value[key] ?? []) as Record<string, unknown>[]) {
-      if ((row.levelId !== undefined || ['sheets','roofs','services'].includes(key)) &&
+      if ((row.levelId !== undefined || ['sheets','roofs','services','slabs'].includes(key)) &&
         (typeof row.levelId !== 'string' || !levelIds.has(row.levelId))) invalid();
       if (key !== 'sheets' && row.sheetId !== undefined) {
         if (typeof row.sheetId !== 'string' || !sheetIds.has(row.sheetId)) invalid();

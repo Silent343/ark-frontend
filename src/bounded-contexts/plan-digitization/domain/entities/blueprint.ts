@@ -1,7 +1,10 @@
+import type { CadPlan } from "./cad-plan";
+
 export interface Level {
   id: string;
   name: string;
   elevation: number;
+  height?: number;
 }
 export interface Room {
   id: string;
@@ -42,6 +45,9 @@ export interface Column {
   x: number;
   y: number;
   size: number;
+  depth?: number;
+  rotation?: number;
+  height?: number;
 }
 export interface Stair {
   id: string;
@@ -54,8 +60,22 @@ export interface Stair {
   /** Straight-flight geometry; radius is its half-width for legacy editor controls. */
   length?: number;
   rotation?: number;
+  rise?: number;
+  baseElevation?: number;
+  stepCount?: number;
 }
-export type PlanDiscipline = "architecture" | "structure" | "electrical" | "plumbing";
+
+/** Floor contours follow enclosed CAD faces; shafts and stair voids remain holes. */
+export interface FloorSlab {
+  id: string;
+  levelId: string;
+  name: string;
+  polygon: Array<[number, number]>;
+  holes: Array<Array<[number, number]>>;
+  thickness: number;
+}
+export type PlanDiscipline =
+  "architecture" | "structure" | "electrical" | "plumbing";
 
 /** A source page stays identifiable even when several drawings share a level. */
 export interface PlanSheet {
@@ -88,9 +108,12 @@ export interface RoofZone {
   depth: number;
   thickness: number;
   elevation: number;
+  /** CAD coverage follows an explicit closed outline instead of its rectangular bounds. */
+  polygon?: Array<[number, number]>;
 }
 
-export type ServiceKind = "outlet" | "switch" | "light" | "panel" | "water" | "drain";
+export type ServiceKind =
+  "outlet" | "switch" | "light" | "panel" | "water" | "drain";
 export interface ServicePoint {
   id: string;
   levelId: string;
@@ -132,12 +155,33 @@ export interface PlanReview {
     width: number;
     height: number;
     confidence: number;
-    source: "pdf" | "ocr";
+    source: "pdf" | "ocr" | "cad";
   }>;
 }
 
 /** Shared, calibrated geometry consumed by both editors and the procedural renderer. */
 export interface Blueprint {
+  cad?: CadPlan;
+  slabs?: FloorSlab[];
+  /** Original furniture symbols remain precise plan details rather than invented bounding-box solids. */
+  floorDetails?: Array<{ levelId: string; segments: number[] }>;
+  reconstruction?: {
+    version: number;
+    pairedWalls: number;
+    sourceEdges: number;
+    alignedPlans: number;
+    namedSpaces: number;
+  };
+  fixtures?: Array<{
+    id: string;
+    levelId: string;
+    x: number;
+    y: number;
+    width: number;
+    depth: number;
+    height: number;
+    name: string;
+  }>;
   projectId: string;
   width: number;
   height: number;

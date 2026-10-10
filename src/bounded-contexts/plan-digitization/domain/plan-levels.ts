@@ -1,9 +1,12 @@
-import type { Blueprint } from './entities/blueprint';
+import type { Blueprint } from "./entities/blueprint";
 
 /** Legacy elements are assigned to ground level, even after a basement is inserted. */
 export function geometryOnLevel(plan: Blueprint, levelId: string): Blueprint {
-  const ground = plan.levels.find((level) => level.elevation === 0)?.id ?? plan.levels[0]?.id;
-  const onLevel = (item: { levelId?: string }) => (item.levelId ?? ground) === levelId;
+  const ground =
+    plan.levels.find((level) => level.elevation === 0)?.id ??
+    plan.levels[0]?.id;
+  const onLevel = (item: { levelId?: string }) =>
+    (item.levelId ?? ground) === levelId;
   return {
     ...plan,
     rooms: plan.rooms.filter(onLevel),
@@ -15,5 +18,8 @@ export function geometryOnLevel(plan: Blueprint, levelId: string): Blueprint {
     roofs: plan.roofs?.filter(onLevel),
     services: plan.services?.filter(onLevel),
     routes: plan.routes?.filter(onLevel),
+    fixtures: plan.fixtures?.filter(onLevel),
+    slabs: plan.slabs?.filter(onLevel),
+    floorDetails: plan.floorDetails?.filter(onLevel),
   };
 }

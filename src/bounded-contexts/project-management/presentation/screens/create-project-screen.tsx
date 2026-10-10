@@ -18,6 +18,12 @@ import { createProjectWorkspace } from "@/composition/application/create-project
 import { Field } from "@/composition/presentation/workspace-ui";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { ProjectCoverField } from "../components/project-cover-field";
+import { planDigitization } from "@/bounded-contexts/plan-digitization/public";
+import { loadCadPlanSource } from "@/bounded-contexts/plan-digitization/infrastructure/browser-cad-source";
+import {
+  createCadPlan,
+  compileCadBlueprint,
+} from "@/bounded-contexts/plan-digitization/domain/cad-operations";
 
 const initialForm: CreateProjectInput = {
   name: "",
@@ -63,10 +69,28 @@ export function CreateProjectScreen() {
   const selectFiles = (selected: FileList | File[]) => {
     if (busy || selected.length === 0) return;
     const incoming = Array.from(selected);
-    if (files.length + incoming.length > 12 || incoming.some((file) =>
-      !["image/png", "image/jpeg", "image/webp", "application/pdf"].includes(file.type) ||
-      file.size > 3 * 1024 * 1024
-    )) {
+    const cadFiles = [...files, ...incoming].filter((file) =>
+      /\.(dwg|dxf)$/i.test(file.name),
+    );
+    if (cadFiles.length > 1) {
+      setError(
+        "Carga un archivo CAD principal por proyecto. Puede contener varias plantas y láminas.",
+      );
+      return;
+    }
+    if (
+      files.length + incoming.length > 12 ||
+      incoming.some((file) =>
+        /\.(dwg|dxf)$/i.test(file.name)
+          ? file.size > 12 * 1024 * 1024
+          : ![
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "application/pdf",
+            ].includes(file.type) || file.size > 3 * 1024 * 1024,
+      )
+    ) {
       setError(t("pm.fileError"));
       return;
     }
@@ -93,6 +117,30 @@ export function CreateProjectScreen() {
       for (const file of files) {
         const key = `${file.name}:${file.size}:${file.lastModified}`;
         if (uploaded.has(key)) continue;
+        if (/\.(dwg|dxf)$/i.test(file.name)) {
+          const source = await loadCadPlanSource(file);
+          try {
+            if (!source.cad) throw new Error("No se pudo leer el CAD.");
+            const base = await planDigitization.getBlueprint.execute(
+              project.id,
+            );
+            const cad = createCadPlan(
+              file.name,
+              source.cad.entities,
+              source.cad.layers,
+              source.cad.skipped,
+              form.floorHeight,
+            );
+            await planDigitization.saveBlueprint.execute(
+              compileCadBlueprint(base, cad, form.floorHeight),
+            );
+          } finally {
+            source.cad?.dispose();
+          }
+          uploaded.add(key);
+          setUploadedKeys([...uploaded]);
+          continue;
+        }
         const fileData = await readSource(file);
         await documents.create(project.id, {
           title: file.name,
@@ -108,7 +156,11 @@ export function CreateProjectScreen() {
         uploaded.add(key);
         setUploadedKeys([...uploaded]);
       }
-      router.push(files.length ? `/projects/${project.id}/editor?mode=edit&import=1` : `/projects/${project.id}`);
+      router.push(
+        files.length
+          ? `/projects/${project.id}/editor?mode=edit${files.some((file) => /\.(dwg|dxf)$/i.test(file.name)) ? "" : "&import=1"}`
+          : `/projects/${project.id}`,
+      );
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : t("pm.create.failed"),
@@ -185,7 +237,11 @@ export function CreateProjectScreen() {
               </Field>
               <Field label={t("pm.create.basements")}>
                 <input
-                  required type="number" min={0} max={10} step={1}
+                  required
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={1}
                   value={form.basements ?? 0}
                   onChange={(e) => update("basements", Number(e.target.value))}
                 />
@@ -242,9 +298,24 @@ export function CreateProjectScreen() {
                   <strong>{files.length} planos seleccionados</strong>
                   <ul className="w-full space-y-1 text-left">
                     {files.map((file, index) => (
-                      <li key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1 text-xs">
+                      <li
+                        key={`${file.name}-${index}`}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1 text-xs"
+                      >
                         <span className="truncate">{file.name}</span>
-                        <button type="button" aria-label={`Quitar ${file.name}`} onClick={() => setFiles((current) => current.filter((_, position) => position !== index))}><X size={14} /></button>
+                        <button
+                          type="button"
+                          aria-label={`Quitar ${file.name}`}
+                          onClick={() =>
+                            setFiles((current) =>
+                              current.filter(
+                                (_, position) => position !== index,
+                              ),
+                            )
+                          }
+                        >
+                          <X size={14} />
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -253,18 +324,24 @@ export function CreateProjectScreen() {
                 <>
                   <UploadCloud size={34} />
                   <strong>{t("pm.create.drop")}</strong>
-                  <small>PDF o imagen · máximo 3 MB por archivo · hasta 12 archivos</small>
+                  <small>
+                    DWG / DXF hasta 12 MB · PDF o imagen hasta 3 MB · hasta 12
+                    archivos
+                  </small>
                 </>
               )}
               <label className="pm-button">
-                    <input
-                      type="file"
-                      className="sr-only"
-                      multiple
-                      accept=".pdf,.png,.jpg,.jpeg,.webp"
-                      onChange={(e) => { if (e.target.files) selectFiles(e.target.files); e.target.value = ""; }}
-                    />
-                    {files.length ? "Agregar más planos" : t("pm.create.browse")}
+                <input
+                  type="file"
+                  className="sr-only"
+                  multiple
+                  accept=".dwg,.dxf,.pdf,.png,.jpg,.jpeg,.webp"
+                  onChange={(e) => {
+                    if (e.target.files) selectFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                {files.length ? "Agregar más planos" : t("pm.create.browse")}
               </label>
             </div>
             <p className="pm-footnote">{t("pm.create.demo")}</p>

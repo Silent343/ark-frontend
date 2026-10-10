@@ -46,7 +46,7 @@ Se mantiene la frontera REST existente, sin introducir endpoints de acción como
 - `POST /api/v1/projects/{projectId}/blueprints` para el primer plano
 - `PATCH /api/v1/projects/{projectId}/blueprints/{blueprintId}` con `If-Match` para cambios
 
-La fila `blueprints` conserva el agregado `geometry` dentro del almacenamiento SQLite existente. `calibration`, `sourceSize`, `review`, `sheets`, `roofs` y `services` amplían ese JSON con la nomenclatura camelCase ya usada por `Blueprint`; las columnas de los recursos REST continúan en snake_case. No se requieren nuevas tablas ni migraciones destructivas.
+La fila PostgreSQL `teluria.blueprints` conserva el agregado `geometry` en JSONB. `calibration`, `sourceSize`, `review`, `sheets`, `roofs` y `services` amplían ese JSON con la nomenclatura camelCase ya usada por `Blueprint`; las columnas relacionales de los recursos REST continúan en snake_case. La migración inicial del backend crea esta tabla sin modificar el SQLite anterior.
 
 La API valida referencias, coordenadas finitas, coherencia entre distancia y escala, límites de metadatos OCR y el estado de revisión. Permisos de proyecto y control de concurrencia se mantienen. `sourceSize` evita que ampliar el lienzo estire la imagen y rompa la calibración.
 
@@ -70,13 +70,31 @@ Antes de desplegar un detector avanzado: reunir planos con permiso, separar entr
 
 ## Comprobación local
 
+### CAD editable y reconstrucción por capas
+
+El flujo DWG/DXF conserva en `Blueprint.cad` las entidades editables, las capas y las regiones de planta. El editor de pantalla completa permite seleccionar, desplazar, girar, escalar, modificar vértices y editar textos. La vista previa no expone herramientas de edición. La navegación del espacio usa una única fila con menús contextuales por área.
+
+La compilación semántica interpreta capas identificables como muros, puertas, ventanas, columnas, escaleras, mobiliario y servicios. Las regiones evitan extruir elevaciones y cortes como plantas del edificio. Los títulos sugieren sótanos y plantas repetidas; el usuario puede corregir región, nombre, cota, repetición, unidades y función de cada capa. La confirmación de unidad es independiente de la detección de plantas. Las cotas NPT se leen durante la detección; las cotas editadas por el usuario prevalecen. Sin cota explícita se conserva la altura de proyecto como hipótesis.
+
+La reconstrucción v2 empareja caras paralelas para medir espesores, une segmentos redundantes y registra plantas por geometría compartida. Las capas estructurales distinguen columnas compactas, muros largos y ejes. Las aberturas requieren soporte de jambas/muros; los tramos de escalera siguen sus peldaños y orientación. Una máscara métrica recupera contornos de losas con huecos explícitos para patios, ductos y escaleras. El mobiliario se conserva como trazado preciso al aislar una planta, sin cajas volumétricas inventadas. Las cubiertas solo se generan desde contornos cerrados asignados a esa función.
+
+Sigue siendo **un borrador, no BIM final**. La inscripción en la lámina puede ser incompleta o ambigua. Las alturas de puertas/ventanas, antepechos sin anotación y acabados son valores iniciales; revisar unidades, registro, vacíos y geometría antes de medir. No se deducen armaduras ni vigas ausentes. Los símbolos de instalaciones son referencias pendientes de clasificación; no una red MEP calculada. Las capas desconocidas permanecen editables como referencia.
+
+El editor reconstruye en un Web Worker cancelable; una edición posterior invalida resultados antiguos. El visor v2 agrupa muros, marcos, columnas y peldaños con `InstancedMesh`, fusiona superficies por nivel, limita la resolución del dispositivo y renderiza bajo demanda. Las sombras se recalculan cuando cambia la geometría o la luz, no por cada movimiento de órbita. Recorrido y simulación mantienen animación continua cuando la necesitan. Las vistas antiguas se actualizan fuera del hilo de interfaz sin sobrescribir automáticamente su CAD.
+
+PNG/JPG usan el mismo render vectorial a resolución de exportación. El DWG generado contiene las entidades editadas; los bloques y cotas se descomponen, las curvas se aproximan y objetos especiales no compatibles (enumerados en el inspector) no se conservan. El original del usuario no se modifica. No debe presentarse como una conservación íntegra del DWG de origen.
+
+El agregado se guarda por los endpoints REST de `blueprints`, con validación CAD y control `If-Match`. Únicamente este recurso admite cuerpos de hasta 32 MB para el JSON vectorial; el resto de los recursos mantiene su límite anterior. Para archivos mayores conviene almacenamiento de objetos y versiones de documento, no elevar indiscriminadamente el límite global.
+
+`npm run test:cad` verifica regiones, unidades, repetición, edición inmutable, espesores medidos, patios abiertos, NPT, alineación entre plantas y ausencia de coordenadas no finitas. El backend valida contornos, niveles, número de peldaños y límites de coordenadas antes de persistir. La prueba local con EDIFICIO 4 abrió 83.567 entidades, guardó y recuperó un texto editado, descargó PNG/JPG/DWG y reabrió el DWG para comprobar ese texto. La reconstrucción v2 alinea seis regiones para nueve niveles y reconoce 85 ambientes etiquetados, pendientes de revisión técnica.
+
 ```powershell
 npm run prepare:plans
 npm run test:plans
 npm run lint
 npm run build
-$env:ARK_TEST_MODE='1'
+$env:TELURIA_API_URL='http://127.0.0.1:8000'
 npm run start -- --hostname 127.0.0.1 --port 3010
 ```
 
-En otra terminal, `npm run test:plans:browser` utiliza Chrome en modo headless y un PDF sintético. Requiere que el servidor anuncie `X-Ark-Test-Mode: 1` antes de crear cualquier dato. Las capturas quedan en `.data/qa/plan-screenshots`. Los modelos, archivos de prueba y base QA no se versionan. `npm run dev` y `npm run build` preparan automáticamente los assets locales de PDF/OCR.
+Para `test:plans:browser`, inicia además una instancia aislada del backend en modo `TELURIA_TEST_MODE=1`, conectada a una base PostgreSQL de QA, y configura su origen permitido como `http://127.0.0.1:3010`. En otra terminal, la prueba utiliza Chrome en modo headless y un PDF sintético; exige `X-Ark-Test-Mode: 1` del backend antes de crear datos. Las capturas quedan en `.data/qa/plan-screenshots`. Los modelos y archivos de prueba no se versionan. `npm run dev` y `npm run build` preparan automáticamente los assets locales de PDF/OCR.

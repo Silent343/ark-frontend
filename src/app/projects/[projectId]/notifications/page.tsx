@@ -1,4 +1,5 @@
 import dynamic from "next/dynamic";
+export const metadata = { title: "Notificaciones" };
 import {WorkspaceSkeleton} from "@/composition/presentation/workspace-ui";
 const Screen=dynamic(()=>import("@/bounded-contexts/notification-management/presentation/notifications-screen").then(m=>m.NotificationsScreen),{loading:()=> <WorkspaceSkeleton/>});
 /** Lazy project module; shared workspace boundaries handle loading and failures. */

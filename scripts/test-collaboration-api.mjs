@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { PDFDocument } from "pdf-lib";
 const base = process.env.ARK_TEST_URL ?? "http://127.0.0.1:3010";
 const password = "QA-only-passphrase-2026";
@@ -423,7 +424,7 @@ assert(
   ),
 );
 assert(!JSON.stringify(changes).includes("token_hash"));
-const seed = await fetch(base + "/db.json").then((r) => r.json()),
+const seed = JSON.parse(await readFile(new URL("../public/db.json", import.meta.url), "utf8")),
   geometry = { ...seed.blueprint, projectId: project.id };
 const plan = expect(
   await call("/blueprints", { method: "POST", body: { geometry } }),

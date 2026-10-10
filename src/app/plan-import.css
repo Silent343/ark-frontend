@@ -103,6 +103,37 @@
 .plan-file-name {
   overflow-wrap: anywhere;
 }
+.plan-cad-layers {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.plan-cad-layer-list {
+  display: grid;
+  gap: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  background: var(--pm-soft);
+}
+.plan-cad-layer-list .plan-check {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 3px;
+}
+.plan-cad-layer-list .plan-check span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-cad-layer-list .plan-check small {
+  margin-left: auto;
+  color: var(--pm-muted);
+}
 .plan-upload {
   padding: 16px;
   background: var(--pm-soft);
@@ -124,6 +155,20 @@
   max-height: 44dvh;
   cursor: crosshair;
 }
+.plan-cad-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.plan-cad-zoom span { margin-right: auto; }
+.plan-cad-zoom .pm-button { min-width: 36px; padding: 6px 10px; }
+.plan-cad-zoom output { min-width: 42px; text-align: center; }
+.plan-import-preview.plan-cad-preview {
+  max-height: 64dvh;
+  overflow: auto;
+}
+.plan-import-preview svg.plan-cad-preview-svg { max-height: none; }
 .plan-import-empty {
   display: grid;
   place-content: center;

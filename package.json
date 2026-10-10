@@ -7,6 +7,7 @@
     "predev": "npm run prepare:plans",
     "prebuild": "npm run prepare:plans",
     "test:plans": "node scripts/test-plan-pipeline.mjs",
+    "test:cad": "node scripts/test-cad-pipeline.mjs",
     "test:plans:browser": "node scripts/test-plan-browser.mjs",
     "dev": "next dev",
     "build": "next build",
@@ -16,6 +17,7 @@
     "test:collaboration": "node scripts/test-collaboration-api.mjs"
   },
   "dependencies": {
+    "@node-projects/acad-ts": "^3.2.0",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "@tesseract.js-data/eng": "^1.0.0",

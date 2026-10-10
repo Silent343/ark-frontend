@@ -1,4 +1,5 @@
 "use client";
+import { createCadPlan, compileCadBlueprint } from "../../domain/cad-operations";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RotateCw, Upload, X } from "lucide-react";
@@ -64,6 +65,7 @@ export function PlanImportDialog({
   const dialog = useRef<HTMLDialogElement>(null),
     controller = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const cadRenderGeneration = useRef(0);
   const [file, setFile] = useState<File | null>(null),
     [page, setPage] = useState(1);
   const [discipline, setDiscipline] = useState<PlanDiscipline>("architecture");
@@ -71,6 +73,8 @@ export function PlanImportDialog({
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
   const [source, setSource] = useState<RasterPlan | null>(null);
+  const [visibleCadLayers, setVisibleCadLayers] = useState<string[]>([]);
+  const [previewZoom, setPreviewZoom] = useState(1);
   const [rotation, setRotation] = useState(0),
     [contrast, setContrast] = useState(100),
     [denoise, setDenoise] = useState(true);
@@ -93,13 +97,14 @@ export function PlanImportDialog({
   const prepared = useMemo(
     () =>
       source
-        ? preparePlanImage(source.canvas, rotation, contrast, denoise)
+        ? preparePlanImage(source.canvas, rotation, contrast, source.cad ? false : denoise, !source.cad,
+            source.cad ? 3000 : undefined)
         : null,
     [source, rotation, contrast, denoise],
   );
   const preview = useMemo(
-    () => prepared?.toDataURL("image/jpeg", 0.9),
-    [prepared],
+    () => prepared?.toDataURL("image/jpeg", source?.cad ? 0.82 : 0.9),
+    [prepared, source?.cad],
   );
   useEffect(() => {
     const requests = generation;
@@ -109,6 +114,7 @@ export function PlanImportDialog({
       controller.current?.abort();
     };
   }, []);
+  useEffect(() => () => source?.cad?.dispose(), [source?.cad]);
 
   const resetAnalysis = () => {
     setDraft(null);
@@ -122,16 +128,21 @@ export function PlanImportDialog({
   async function load(next: File, nextPage: number) {
     const run = ++generation.current;
     controller.current?.abort();
+    const operation = new AbortController();
+    controller.current = operation;
     setBusy(true);
     resetAnalysis();
     try {
-      const raster = await loadPlanSource(next, nextPage);
-      if (run !== generation.current) return;
+      const raster = await loadPlanSource(next, nextPage, operation.signal);
+      if (run !== generation.current) { raster.cad?.dispose(); return; }
       setFile(next);
       setPage(nextPage);
       setSource(raster);
+      setVisibleCadLayers(raster.cad?.layers.filter((item) => item.visible).map((item) => item.name) ?? []);
+      setPreviewZoom(1);
       if (!replaceSheetId)
-        setDiscipline(suggestDiscipline(next.name, raster.text.map((item) => item.text).join(" ")));
+        setDiscipline(suggestDiscipline(next.name, raster.cad ? "" : raster.text.map((item) => item.text).join(" ")));
+      setManual(!!raster.cad); // A CAD preview alone must not invent semantic walls or rooms.
       setRotation(0);
       setContrast(100);
       setPerspective(false);
@@ -139,6 +150,23 @@ export function PlanImportDialog({
       if (run === generation.current) setError((reason as Error).message);
     } finally {
       if (run === generation.current) setBusy(false);
+    }
+  }
+  async function setCadLayers(next: string[]) {
+    if (!source?.cad || next.length === 0) return;
+    const run = ++cadRenderGeneration.current;
+    setBusy(true);
+    setError("");
+    try {
+      const rendered = await source.cad.renderLayers(next);
+      if (run !== cadRenderGeneration.current) return;
+      setVisibleCadLayers(next);
+      setSource({ ...source, canvas: rendered.canvas, text: rendered.text });
+      resetAnalysis(); // A layer change changes the calibrated source image and its OCR positions.
+    } catch (reason) {
+      if (run === cadRenderGeneration.current) setError((reason as Error).message);
+    } finally {
+      if (run === cadRenderGeneration.current) setBusy(false);
     }
   }
   function selectDocument(id: string) {
@@ -239,6 +267,7 @@ export function PlanImportDialog({
           "text-proposals-require-confirmation",
           "heights-assumed",
           "verify-source-discipline-and-level",
+          ...(source?.cad ? ["cad-preview-requires-review"] : []),
         ],
       };
       setDraft(next);
@@ -379,13 +408,39 @@ export function PlanImportDialog({
               <input
                 aria-label={t("import.choose")}
                 type="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,application/pdf,image/png,image/jpeg,image/webp"
                 onChange={(event) => {
                   const selected = event.target.files?.[0];
                   if (selected) void load(selected, 1);
                 }}
               />
             </label>
+            {source?.cad && <div className="plan-cad-layers">
+              <button type="button" className="pm-button pm-primary" disabled={busy} onClick={async () => {
+                if (!file || !source.cad) return;
+                setBusy(true); setError("");
+                try {
+                  const cad = createCadPlan(file.name, source.cad.entities, source.cad.layers, source.cad.skipped, wallHeight);
+                  await onSave(compileCadBlueprint(blueprint, cad, wallHeight));
+                  onClose();
+                } catch (error) { setError((error as Error).message); }
+                finally { setBusy(false); }
+              }}>Abrir CAD editable y preparar modelo 3D</button>
+              <strong>{t("import.cadLayers")} · {source.cad.entityCount.toLocaleString(locale)}</strong>
+              <p className="plan-import-help">{t("import.cadLayersHint")}</p>
+              <div className="plan-cad-layer-list">
+                {source.cad.layers.map((layer) => <label className="plan-check" key={layer.name}>
+                  <input type="checkbox" checked={visibleCadLayers.includes(layer.name)} disabled={busy ||
+                    (visibleCadLayers.length === 1 && visibleCadLayers.includes(layer.name))}
+                    onChange={(event) => void setCadLayers(event.target.checked
+                      ? [...visibleCadLayers, layer.name] : visibleCadLayers.filter((name) => name !== layer.name))} />
+                  <span>{layer.name}</span><small>{layer.count.toLocaleString(locale)}</small>
+                </label>)}
+              </div>
+              {Object.keys(source.cad.skipped).length > 0 && <p className="plan-import-help">
+                {t("import.cadPartial")} {Object.entries(source.cad.skipped).map(([kind, count]) => `${kind}: ${count}`).join(" · ")}
+              </p>}
+            </div>}
             {(blueprint.sheets?.length ?? 0) > 0 && <label>
               {t("import.importAction")}
               <select value={replaceSheetId} onChange={(event) => {
@@ -624,6 +679,7 @@ export function PlanImportDialog({
                 <input
                   type="checkbox"
                   checked={manual}
+                  disabled={!!source?.cad}
                   onChange={(event) => setManual(event.target.checked)}
                 />
                 {t("import.manual")}
@@ -663,10 +719,20 @@ export function PlanImportDialog({
                   : "import.twoPoints",
             )}
           </p>
-          <div className="plan-import-preview">
+          {source?.cad && <div className="plan-cad-zoom" aria-label={t("import.cadZoom")}>
+            <span>{t("import.cadZoom")}</span>
+            <button type="button" className="pm-button" disabled={previewZoom <= 0.5}
+              onClick={() => setPreviewZoom((value) => Math.max(0.5, value / 2))} aria-label={t("import.zoomOut")}>−</button>
+            <output>{Math.round(previewZoom * 100)}%</output>
+            <button type="button" className="pm-button" disabled={previewZoom >= 4}
+              onClick={() => setPreviewZoom((value) => Math.min(4, value * 2))} aria-label={t("import.zoomIn")}>+</button>
+          </div>}
+          <div className={`plan-import-preview${source?.cad ? " plan-cad-preview" : ""}`}>
             {prepared && preview ? (
               <svg
                 viewBox={`0 0 ${prepared.width} ${prepared.height}`}
+                className={source?.cad ? "plan-cad-preview-svg" : undefined}
+                style={source?.cad ? { width: `${previewZoom * 100}%` } : undefined}
                 role="img"
                 aria-label={t("import.preview")}
                 onClick={(event) => {
@@ -820,9 +886,7 @@ export function PlanImportDialog({
                     <li key={index}>
                       {line.text}{" "}
                       <small>
-                        {line.source === "pdf"
-                          ? "PDF"
-                          : `OCR · ${Math.round(line.confidence)}%`}
+                        {line.source === "pdf" ? "PDF" : line.source === "cad" ? "CAD" : `OCR · ${Math.round(line.confidence)}%`}
                       </small>
                     </li>
                   ))}

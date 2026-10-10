@@ -49,7 +49,7 @@ const navigation: NavigationItem[] = [
 ];
 
 /** Persistent responsive navigation shell shared by every product screen. */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, previewMode = false }: { children: ReactNode; previewMode?: boolean }) {
   const { user, signOut } = useAuth();
   const pathname = usePathname();
   const activeProjectId = useActiveProject(pathname);
@@ -156,29 +156,35 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="relative mx-5 mb-5 space-y-1">
-          <Link
-            href="/profile"
-            className={`flex items-center gap-3 rounded-xl px-1 py-2 transition hover:bg-white/[.05] ${pathname === "/profile" ? "bg-white/[.07]" : ""}`}
-          >
-            <div className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-[#f3c4a8] to-[#8ea9a1] text-xs font-bold text-[#111815]">
-              GR
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold">{user.name}</p>
-              <p className="mt-0.5 truncate text-[10px] text-white/40">
-                {t("nav.architectureWorkspace", "Espacio de arquitectura")}
-              </p>
-            </div>
-            <ChevronDown size={14} className="text-white/35" />
-          </Link>
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="ml-12 flex h-8 items-center gap-2 rounded-lg px-2 text-[11px] font-semibold text-white/50 transition hover:bg-white/[.06] hover:text-white"
-          >
-            <LogOut size={14} />
-            {t("c.signOut", "Cerrar sesión")}
-          </button>
+          {previewMode ? (
+            <p className="px-3 py-2 text-xs text-white/55">Vista previa local</p>
+          ) : (
+            <>
+              <Link
+                href="/profile"
+                className={`flex items-center gap-3 rounded-xl px-1 py-2 transition hover:bg-white/[.05] ${pathname === "/profile" ? "bg-white/[.07]" : ""}`}
+              >
+                <div className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-[#f3c4a8] to-[#8ea9a1] text-xs font-bold text-[#111815]">
+                  GR
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold">{user.name}</p>
+                  <p className="mt-0.5 truncate text-[10px] text-white/40">
+                    {t("nav.architectureWorkspace", "Espacio de arquitectura")}
+                  </p>
+                </div>
+                <ChevronDown size={14} className="text-white/35" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                className="ml-12 flex h-8 items-center gap-2 rounded-lg px-2 text-[11px] font-semibold text-white/50 transition hover:bg-white/[.06] hover:text-white"
+              >
+                <LogOut size={14} />
+                {t("c.signOut", "Cerrar sesión")}
+              </button>
+            </>
+          )}
         </div>
       </aside>
 
@@ -297,20 +303,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <Settings size={17} /> {t("nav.preferences", "Preferencias")}
               </Link>
-              <Link
-                href="/profile"
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-white/55"
-              >
-                <UserRound size={17} /> Mi perfil
-              </Link>
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-white/55"
-              >
-                <LogOut size={17} /> {t("c.signOut", "Cerrar sesión")}
-              </button>
+              {!previewMode && (
+                <>
+                  <Link
+                    href="/profile"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-white/55"
+                  >
+                    <UserRound size={17} /> Mi perfil
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void signOut()}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-white/55"
+                  >
+                    <LogOut size={17} /> {t("c.signOut", "Cerrar sesión")}
+                  </button>
+                </>
+              )}
             </nav>
           </aside>
         </div>

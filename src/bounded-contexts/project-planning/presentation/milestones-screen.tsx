@@ -48,7 +48,7 @@ function isoWeek(date: Date) {
 }
 
 /**
- * Editable project GANT with month and week scales.
+ * Editable project Gantt with month and week scales.
  * Bars expose their exact dates on hover and focus without hiding row context.
  */
 export function MilestonesScreen() {

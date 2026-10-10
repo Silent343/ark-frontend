@@ -39,6 +39,7 @@ import { GlobalSiteSelector } from "@/bounded-contexts/site-planning/presentatio
 import type { ConstructionSiteSelection } from "@/bounded-contexts/site-planning/public";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { useRenderSettings } from "../use-render-settings";
+import { useCadReconstruction } from "../use-cad-reconstruction";
 
 const BuildingScene = dynamic(
   () =>
@@ -76,7 +77,9 @@ const cameraOptions: { id: CameraPreset; label: string; icon: typeof Orbit }[] =
 
 /** Navigable procedural 3D presentation studio. */
 export function ModelScreen({ projectId }: { projectId: string }) {
-  const { data, loading, error, reload } = useProjectWorkspace(projectId);
+  const { data: workspace, loading, error, reload } = useProjectWorkspace(projectId);
+  const reconstruction = useCadReconstruction(workspace?.blueprint);
+  const data = workspace ? { ...workspace, blueprint: reconstruction.blueprint ?? workspace.blueprint } : null;
   const { t } = useI18n();
   const { settings: renderSettings, update: updateRenderSettings } =
     useRenderSettings(projectId);
@@ -92,14 +95,36 @@ export function ModelScreen({ projectId }: { projectId: string }) {
   const [siteSelection, setSiteSelection] =
     useState<ConstructionSiteSelection | null>(null);
   if (loading) return <ModelSkeleton />;
-  if (error || !data)
+  if (reconstruction.loading) return <div className="pm-card pm-empty" role="status"><Layers3 size={28} /><h2>Reconstruyendo el edificio</h2><p>Alineando plantas, aberturas y superficies del CAD…</p></div>;
+  if (error || reconstruction.error || !data)
     return (
       <ErrorState
-        message={error ?? "No project data was returned."}
+        message={error ?? reconstruction.error ?? "No project data was returned."}
         onRetry={reload}
       />
     );
   const levelCount = Math.max(1, data.blueprint.levels.length);
+  if (
+    !data.blueprint.walls.length &&
+    !data.blueprint.columns.length &&
+    !data.blueprint.roofs?.length
+  )
+    return (
+      <div className="pm-card pm-empty">
+        <BoxSelect size={32} />
+        <h1>Prepara la geometría del modelo</h1>
+        <p>
+          Abre el plano 2D para importar el CAD y asignar sus plantas y capas al
+          edificio.
+        </p>
+        <Link
+          className="pm-button pm-primary"
+          href={`/projects/${projectId}/editor?mode=edit&import=1`}
+        >
+          Abrir editor 2D
+        </Link>
+      </div>
+    );
 
   if (!editMode) {
     return (
@@ -121,6 +146,19 @@ export function ModelScreen({ projectId }: { projectId: string }) {
             </Link>
           }
         />
+        {data.blueprint.cad && (
+          <div className="cad-note" role="note">
+            <strong>Reconstrucción CAD · propuesta para revisión</strong>
+            <p>
+              Revisa plantas, alturas y función de las capas en el editor 2D.
+              Las aberturas se vinculan a sus muros y el mobiliario se conserva
+              como trazado de referencia. La reconstrucción requiere revisión;
+              no constituye un modelo BIM validado.
+              {!data.blueprint.cad.unitConfirmed &&
+                " La unidad del dibujo todavía no está confirmada."}
+            </p>
+          </div>
+        )}
         <Panel className="mt-6 overflow-hidden">
           <div className="flex min-h-14 items-center justify-between gap-3 border-b border-[#dfe2d9] px-4 py-3">
             <div className="flex items-center gap-2">
@@ -226,11 +264,16 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               </label>
               <button
                 disabled={!data.blueprint.roofs?.length}
-                title={!data.blueprint.roofs?.length ? "Define zonas de cubierta en el editor 2D" : undefined}
+                title={
+                  !data.blueprint.roofs?.length
+                    ? "Define zonas de cubierta en el editor 2D"
+                    : undefined
+                }
                 onClick={() => setShowRoof((value) => !value)}
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce0d8] bg-white px-3 text-[10px] font-semibold"
               >
-                {showRoof ? <Eye size={13} /> : <EyeOff size={13} />} Cubiertas ({data.blueprint.roofs?.length ?? 0})
+                {showRoof ? <Eye size={13} /> : <EyeOff size={13} />} Cubiertas
+                ({data.blueprint.roofs?.length ?? 0})
               </button>
             </div>
           </div>
@@ -256,7 +299,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
             </div>
             <div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-white/40 bg-white/75 px-3 py-2 text-[10px] font-semibold text-[#3f4a44] backdrop-blur">
               {viewMode === "Structure"
-                ? "Estructura portante · vigas · columnas · nodos"
+                ? data.blueprint.cad ? "Columnas y losas detectadas · muros de referencia" : "Estructura portante · vigas · columnas · nodos"
                 : `${levelCount} ${levelCount === 1 ? "nivel" : "niveles"} · ${data.blueprint.rooms.length} ambientes · ${data.blueprint.walls.length} muros${showTerrain && siteSelection ? ` · lote ${siteSelection.lotAreaM2} m²` : ""}`}
             </div>
           </div>
@@ -266,7 +309,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
           <div className="plan-review-status">
             <strong>
               {t(
-                data.blueprint.calibration
+                data.blueprint.calibration && (!data.blueprint.cad || data.blueprint.cad.unitConfirmed)
                   ? "render.calibrated"
                   : "render.uncalibrated",
               )}
@@ -305,8 +348,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               </button>
             </div>
             <p className="mt-3 text-[9px] leading-4 text-[#849089]">
-              La vista portante aísla columnas, vigas y nodos generados desde la
-              geometría semántica.
+              {data.blueprint.cad ? "Aísla columnas y losas detectadas; los muros se muestran transparentes. No se infieren vigas ni armaduras ausentes en el CAD." : "La vista portante aísla columnas, vigas y nodos generados desde la geometría semántica."}
             </p>
           </Panel>
           <Panel className="p-5">
@@ -340,12 +382,27 @@ export function ModelScreen({ projectId }: { projectId: string }) {
           </Panel>
           {!!data.blueprint.services?.length && (
             <Panel className="p-5">
-              <h2 className="text-sm font-semibold">{t("model.servicesTitle")}</h2>
-              <p className="mt-2 text-xs text-[#66736d]">{t("model.servicesHint")}</p>
-              <p className="mt-2 text-xs text-[#66736d]">{t("model.routesHint").replace("{count}", String(data.blueprint.routes?.length ?? 0))}</p>
+              <h2 className="text-sm font-semibold">
+                {t("model.servicesTitle")}
+              </h2>
+              <p className="mt-2 text-xs text-[#66736d]">
+                {t("model.servicesHint")}
+              </p>
+              <p className="mt-2 text-xs text-[#66736d]">
+                {t("model.routesHint").replace(
+                  "{count}",
+                  String(data.blueprint.routes?.length ?? 0),
+                )}
+              </p>
               <div className="mt-3 flex flex-wrap gap-3 text-xs font-medium">
-                <span className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full bg-[#e5b546]" /> {t("model.electrical")}</span>
-                <span className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full bg-[#1885b5]" /> {t("model.plumbing")}</span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="size-2.5 rounded-full bg-[#e5b546]" />{" "}
+                  {t("model.electrical")}
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="size-2.5 rounded-full bg-[#1885b5]" />{" "}
+                  {t("model.plumbing")}
+                </span>
               </div>
             </Panel>
           )}

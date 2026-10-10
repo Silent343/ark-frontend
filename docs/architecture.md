@@ -15,7 +15,7 @@ Ark uses explicit bounded contexts. Clean Architecture layers live **inside** ea
 | `notification-management` | Recipient-scoped project notifications and read state                  |
 | `reporting`               | Project risk/cost read models and paginated PDF output                 |
 
-Read-only contexts use domain/presentation layers without empty repositories or application folders. Cross-context authorization, relationship checks and audit orchestration live in composition. Identity infrastructure imports the shared persistence adapter from `kernel/infrastructure`, not HTTP delivery code.
+Read-only frontend contexts use domain/presentation layers without empty repositories or application folders. Server-side authorization, relationship checks and audit orchestration now live in `teluria-backend`.
 
 ## Context map
 
@@ -45,7 +45,7 @@ Contexts that own business state use this layout:
 bounded-contexts/<context>/
 ├── domain/          # Aggregates, entities, value objects, domain rules
 ├── application/     # Use cases and dependency-inversion ports
-├── infrastructure/  # JSON/HTTP/browser adapters
+├── infrastructure/  # HTTP/browser adapters when needed
 ├── presentation/    # Context-owned screens, components, and hooks
 ├── public.ts        # Instantiated application API
 └── index.ts         # Public type/module exports
@@ -58,13 +58,13 @@ bounded-contexts/<context>/
 3. Infrastructure implements ports owned by its context.
 4. A bounded context must not import another context's internal paths. Cross-context access uses its `index.ts`, `public.ts`, or explicitly exported `presentation.ts` contract.
 5. Cross-context result composition belongs under `src/composition`.
-6. Next.js page files select context screens; API route files delegate HTTP handling. Neither owns domain validation.
+6. Next.js page files select context screens. Server routes and domain validation live in `teluria-backend`.
 
 ## Current integration boundary
 
-Management uses `/api/v1/projects` and project-scoped REST resources. Composition joins domain validators, authenticated membership, document-version relationships, audit recording and response semantics. `kernel/infrastructure/workspace-store.ts` uses native SQLite transactions, WAL and a busy timeout; a compatibility facade remains under composition. Do not import session/server modules into client bundles.
+Management uses `/api/v1/projects` and project-scoped REST resources. The frontend keeps transport adapters and DTO mappers; `next.config.ts` forwards API requests to the independent backend via `TELURIA_API_URL`. The backend owns authorization, transactions, audit and PostgreSQL persistence. No Next.js API Route Handlers or SQLite writable store remain in the frontend.
 
-`data/workspace-db.json` is the versioned seed. `.data/ark.sqlite` is the writable database; the former `.data/workspace-db.json` is imported once and preserved. SQLite envelope columns are indexed, aggregate payloads are validated JSON, and email/membership uniqueness is enforced in SQL. Project DTOs map snake_case fields into legacy camelCase design consumers through an explicit anti-corruption mapper. Legacy repository names remain for compatibility; project and blueprint transports now use HTTP.
+`data/workspace-db.json` and `.data/ark.sqlite` are legacy migration sources, not live databases. Project DTOs map snake_case fields into legacy camelCase design consumers through an explicit anti-corruption mapper.
 
 The existing `public/db.json` remains the seed for independent design and administration adapters:
 
@@ -75,4 +75,4 @@ The existing `public/db.json` remains the seed for independent design and admini
 
 Translations for this stage live in `public/i18n/workspace/{es,en,pt}.json` and are fetched by the HTTP translation repository. User-entered content is never automatically translated. `workspace.css` uses shared light/dark design tokens and responsive layouts.
 
-Stage 2 translations are loaded from `public/i18n/collaboration/{es,en,pt}.json` through the existing HTTP translation repository. See `stage-two.md` for permissions and limits. Before public deployment, add verified email/recovery, TLS, centralized rate limits, backups and object storage; the current SQLite deployment is intended for a local studio instance.
+Stage 2 translations are loaded from `public/i18n/collaboration/{es,en,pt}.json` through the existing HTTP translation repository. See `stage-two.md` for permissions and limits. Before a public SaaS launch, add verified email/recovery, backups, observability and object storage; the deployment guide in `teluria-backend/docs/deployment.md` covers Render and Supabase.

@@ -1,6 +1,7 @@
 import { mkdir, readdir, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "..");
@@ -17,6 +18,11 @@ await copyFile(
   path.join(packageRoot("tesseract.js"), "dist/worker.min.js"),
   path.join(destination, "worker.min.js"),
 );
+// The CAD package ships a self-contained ESM bundle; serve it locally for the isolated worker.
+await copyFile(
+  path.join(path.dirname(fileURLToPath(import.meta.resolve("@node-projects/acad-ts"))), "index-min.js"),
+  path.join(destination, "acad.bundle.js"),
+);
 const core = packageRoot("tesseract.js-core");
 for (const name of await readdir(core)) {
   if (/^tesseract-core.*\.(js|wasm)$/.test(name))
@@ -31,4 +37,4 @@ for (const language of ["eng", "spa", "por"]) {
     path.join(destination, `${language}.traineddata.gz`),
   );
 }
-console.log("Prepared local PDF/OCR assets.");
+console.log("Prepared local PDF/OCR/CAD assets.");

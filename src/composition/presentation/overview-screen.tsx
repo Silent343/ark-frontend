@@ -20,6 +20,7 @@ import { Dialog, Field, Status, money, dateLabel } from "./workspace-ui";
 import { requestJson } from "@/shared/infrastructure/rest-client";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { ProjectCoverField } from "@/bounded-contexts/project-management/presentation/components/project-cover-field";
+import { CadPlanCanvas } from "@/bounded-contexts/plan-digitization/presentation/components/cad-plan-canvas";
 
 const BlueprintCanvas = dynamic(
   () =>
@@ -87,12 +88,17 @@ export function OverviewScreen() {
   const attentionItems = [
     {
       key: "milestones",
-      count: data.milestones.filter((milestone) => milestone.status !== "completed" && milestone.due_date < today).length,
+      count: data.milestones.filter(
+        (milestone) =>
+          milestone.status !== "completed" && milestone.due_date < today,
+      ).length,
       href: root + "/milestones",
     },
     {
       key: "overdue",
-      count: data.tasks.filter((task) => task.status !== "done" && task.due_date < today).length,
+      count: data.tasks.filter(
+        (task) => task.status !== "done" && task.due_date < today,
+      ).length,
       href: root + "/tasks",
     },
     {
@@ -102,7 +108,8 @@ export function OverviewScreen() {
     },
     {
       key: "approvals",
-      count: data.approvals.filter((approval) => approval.status === "pending").length,
+      count: data.approvals.filter((approval) => approval.status === "pending")
+        .length,
       href: root + "/approvals",
     },
     {
@@ -215,7 +222,11 @@ export function OverviewScreen() {
         {attentionItems.length ? (
           <div className="pm-attention-list">
             {attentionItems.map((item) => (
-              <Link className="pm-attention-item" href={item.href} key={item.key}>
+              <Link
+                className="pm-attention-item"
+                href={item.href}
+                key={item.key}
+              >
                 <strong>{item.count}</strong>
                 <span>{t("pm.attention." + item.key)}</span>
                 <ArrowUpRight size={16} aria-hidden="true" />
@@ -226,7 +237,9 @@ export function OverviewScreen() {
           <div className="pm-attention-clear">
             <CheckCircle2 size={18} aria-hidden="true" />
             <span>{t("pm.attention.clear")}</span>
-            <Link href={root + "/milestones"}>{t("pm.attention.planNext")}</Link>
+            <Link href={root + "/milestones"}>
+              {t("pm.attention.planNext")}
+            </Link>
           </div>
         )}
       </section>
@@ -246,7 +259,11 @@ export function OverviewScreen() {
             className="pm-plan-preview"
             aria-label={t("pm.planPreview", "Vista previa del plano")}
           >
-            {previewBlueprint ? (
+            {previewBlueprint?.cad ? (
+              <div style={{ width: "100%", height: 260 }}>
+                <CadPlanCanvas plan={previewBlueprint.cad} />
+              </div>
+            ) : previewBlueprint ? (
               <div
                 className="pm-plan-preview-canvas"
                 style={{

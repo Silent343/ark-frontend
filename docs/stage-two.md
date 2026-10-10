@@ -31,7 +31,7 @@ The owner cannot be removed or demoted. Invitations expire after seven days, sto
 
 ## Persistence
 
-SQLite tables use snake_case names. Each table stores indexed relational envelope columns (`id`, `project_id`, creation/revision timestamps) and validated aggregate JSON. Cross-context referential checks happen in the same SQLite transaction. Email and membership uniqueness have database indexes. This is an initial aggregate store, not the final normalized PostgreSQL schema.
+PostgreSQL tables live in the private `teluria` schema. Relational columns and foreign keys connect users, projects and dependent resources; validated aggregate data resides in JSONB. Cross-context operations, audit and notifications commit in one transaction. Email and membership uniqueness have database indexes. The old SQLite file is only an import source.
 
 Session/account data and project data are on disk, not browser storage. The shared blueprint preserves the legacy camelCase geometry contract behind its REST envelope. Administration and terrain settings remain local.
 
@@ -39,4 +39,4 @@ Session/account data and project data are on disk, not browser storage. The shar
 
 Automated integration suites cover authentication, project isolation, role denials, invitation acceptance, cycles/blockers, calendar validation, client document visibility, assigned decisions, immutable authors, package invariants, notifications, audit, PDF parsing, revision conflicts and logout.
 
-Remaining production work includes verified identity recovery, multi-instance load/storage design, transactional outbox/websocket delivery, document object storage and resource-leveled scheduling. Do not describe this release as real-time co-editing or engineering analysis.
+Remaining production work includes verified identity recovery, a transactional outbox if external asynchronous consumers are introduced, document object storage and resource-leveled scheduling. Do not describe this release as real-time co-editing or engineering analysis.

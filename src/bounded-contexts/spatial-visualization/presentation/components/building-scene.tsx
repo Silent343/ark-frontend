@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyProps, Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
+  AdaptiveDpr,
   ContactShadows,
   Environment,
   Html,
@@ -13,6 +14,7 @@ import {
   PointerLockControls,
   Sky,
 } from "@react-three/drei";
+import { CadBuilding } from "./cad-building";
 import {
   ACESFilmicToneMapping,
   CatmullRomCurve3,
@@ -143,7 +145,7 @@ function CameraController({
   baseElevation: number;
   modelViewMode: ModelViewMode;
 }) {
-  const { camera } = useThree();
+  const { camera, invalidate } = useThree();
   useEffect(() => {
     const distance = Math.max(8, height * 1.6, extent * 1.25);
     const positions: Record<CameraPreset, [number, number, number]> = {
@@ -166,7 +168,8 @@ function CameraController({
       0,
     );
     camera.updateProjectionMatrix();
-  }, [camera, height, extent, baseElevation, modelViewMode, preset]);
+    invalidate();
+  }, [camera, height, extent, baseElevation, modelViewMode, preset, invalidate]);
   return null;
 }
 
@@ -366,6 +369,11 @@ function Building({
                     />
                   </mesh>
                 ))}
+                {/* CAD furniture blocks stay linked to their source plan and active level. */}
+                {plan.fixtures?.map((item) => <mesh key={item.id} castShadow receiveShadow position={[(item.x-scene.centerX)/scene.scale,item.height/2,(item.y-scene.centerY)/scene.scale]}>
+                  <boxGeometry args={[item.width/scene.scale,item.height,item.depth/scene.scale]}/>
+                  <meshStandardMaterial color="#b8a78e" roughness={.8}/>
+                </mesh>)}
                 {plan.columns.map((column) => (
                   <mesh
                     key={`${floor}-${column.id}`}
@@ -625,14 +633,17 @@ function DoorLeaf({
   onToggle: () => void;
 }) {
   const group = useRef<Group>(null);
+  const invalidate = useThree(s => s.invalidate);
   const [hovered, setHovered] = useState(false);
   useFrame(() => {
-    if (group.current)
+    if (group.current && Math.abs(group.current.rotation.y - (open ? -Math.PI / 2 : -0.06)) > .001) {
       group.current.rotation.y = MathUtils.lerp(
         group.current.rotation.y,
         open ? -Math.PI / 2 : -0.06,
         0.16,
       );
+      invalidate();
+    }
   });
   return (
     <group
@@ -775,6 +786,8 @@ export function BuildingScene(props: BuildingSceneProps) {
   ];
   const shadows = settings.shadows && quality !== "low";
   const shadowSize = quality === "high" ? 2048 : 1024;
+  const cadModel = !!props.blueprint.cad && props.blueprint.reconstruction?.version === 2;
+  const animate = !!props.simulation?.active || props.cameraPreset === "Walkthrough";
   const hasGeometry =
     props.blueprint.walls.length +
       props.blueprint.rooms.length +
@@ -791,9 +804,13 @@ export function BuildingScene(props: BuildingSceneProps) {
   return (
     <Canvas
       shadows={shadows}
-      dpr={quality === "low" ? 1 : [1, quality === "high" ? 2 : 1.5]}
+      frameloop={animate ? "always" : "demand"}
+      performance={{ min: .7, debounce: 250 }}
+      dpr={quality === "low" ? 1 : [1, quality === "high" ? 2 : cadModel ? 1.25 : 1.5]}
       gl={{ antialias: quality !== "low", toneMapping: ACESFilmicToneMapping }}
     >
+      <AdaptiveDpr />
+      <ShadowCache animate={animate} revision={[props.blueprint, props.material, props.isolatedLevel, settings.sunAzimuth, settings.sunElevation, shadows]} />
       <Exposure value={settings.exposure} />
       <color attach="background" args={[background]} />
       <fog
@@ -873,7 +890,7 @@ export function BuildingScene(props: BuildingSceneProps) {
       )}
       {props.siteSelection && !(props.blueprint.levels.some((level) => level.elevation < 0) && props.isolatedLevel === "All") &&
         <LotTerrain selection={props.siteSelection} />}
-      {hasGeometry && (
+      {hasGeometry && cadModel ? <CadBuilding blueprint={props.blueprint} finish={materialMap[props.material]} isolatedLevel={props.isolatedLevel ?? "All"} interactive={props.cameraPreset === "Walkthrough"} structural={structural} simulation={props.simulation} showRoof={props.showRoof} /> : hasGeometry && (
         <Building
           blueprint={props.blueprint}
           floors={props.floors}
@@ -893,10 +910,16 @@ export function BuildingScene(props: BuildingSceneProps) {
         sectionSize={2.5}
         cellColor={structural ? "#153149" : night ? "#36434a" : "#aeb7af"}
         sectionColor={structural ? "#20547b" : night ? "#53636a" : "#828e84"}
-        position={[0, -0.2, 0]}
+        position={[0, baseElevation - 0.22, 0]}
       />
-      {shadows && (
+      {cadModel && <mesh receiveShadow rotation-x={-Math.PI / 2} position-y={baseElevation - .24}>
+        <planeGeometry args={[extent * 8, extent * 8]} />
+        <shadowMaterial transparent opacity={.18} />
+      </mesh>}
+      {shadows && !cadModel && (
         <ContactShadows
+          key={`${props.isolatedLevel}-${props.material}-${props.showRoof}-${props.lighting}`}
+          frames={animate ? Infinity : 1}
           position={[0, -0.15, 0]}
           opacity={night ? 0.2 : 0.3}
           scale={Math.max(scene.width, scene.depth) * 1.5}
@@ -908,25 +931,39 @@ export function BuildingScene(props: BuildingSceneProps) {
       {props.cameraPreset === "Walkthrough" ? (
         <WalkthroughController width={scene.width} depth={scene.depth} />
       ) : (
-        <OrbitControls
-          makeDefault
-          enableDamping
-          dampingFactor={0.08}
-          minDistance={0.5}
-          maxDistance={Math.max(48, extent * 5)}
-          maxPolarAngle={Math.PI / 2.03}
-          target={[0, baseElevation + height * 0.4, 0]}
-        />
+        <SmoothOrbitControls extent={extent} targetY={baseElevation + height * .4} />
       )}
     </Canvas>
   );
 }
 
+/** Camera motion invalidates demand frames; lowering DPR during a gesture keeps orbit responsive. */
+function SmoothOrbitControls({ extent, targetY }: { extent: number; targetY: number }) {
+  const performance = useThree(s => s.performance);
+  const target = useMemo<[number, number, number]>(() => [0, targetY, 0], [targetY]);
+  return <OrbitControls makeDefault enableDamping dampingFactor={.12} rotateSpeed={.65} zoomSpeed={.8} panSpeed={.8} minDistance={.8} maxDistance={Math.max(48, extent * 5)} maxPolarAngle={Math.PI / 2.01} target={target} onStart={() => performance.regress()} />;
+}
+
+/** Sun shadows depend on geometry and lighting, not on the orbit camera. Reuse them while inspecting. */
+function ShadowCache({ animate, revision }: { animate: boolean; revision: unknown[] }) {
+  const { gl, invalidate } = useThree();
+  useEffect(() => {
+    // Three's imperative renderer owns this cache; React state is not being mutated.
+    /* eslint-disable react-hooks/immutability */
+    gl.shadowMap.autoUpdate = animate;
+    gl.shadowMap.needsUpdate = true;
+    /* eslint-enable react-hooks/immutability */
+    invalidate();
+  }, [gl, invalidate, animate, revision]);
+  return null;
+}
+
 /** Exposure is a renderer property, not a mutation of materials or source geometry. */
 function Exposure({ value }: { value: number }) {
-  const { gl } = useThree();
+  const { gl, invalidate } = useThree();
   useEffect(() => {
     applyProps(gl, { toneMappingExposure: value });
-  }, [gl, value]);
+    invalidate();
+  }, [gl, value, invalidate]);
   return null;
 }

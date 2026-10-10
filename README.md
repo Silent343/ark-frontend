@@ -130,7 +130,7 @@ El reconocimiento actual no es un modelo de inteligencia artificial entrenado. N
 
 ## Arquitectura implementada actualmente
 
-La versión incluida en este repositorio funciona como una aplicación web integral ejecutada por Next.js. El frontend y la API REST se encuentran en el mismo proyecto, mientras que SQLite conserva los datos compartidos en el disco local.
+El frontend Next.js presenta los módulos de trabajo y envía `/api/v1/*` al servicio `teluria-backend` mediante un rewrite de mismo origen. El backend es un monolito modular Node.js con PostgreSQL; este repositorio ya no contiene rutas REST ni una base SQLite de ejecución.
 
 ```mermaid
 flowchart TB
@@ -138,8 +138,8 @@ flowchart TB
     UI --> C[Composición y presentación]
     C --> BC[Contextos de negocio]
     BC --> APP[Casos de uso y puertos]
-    APP --> API[Route Handlers REST /api/v1]
-    API --> DB[(SQLite)]
+    APP --> API[Teluria backend REST /api/v1]
+    API --> DB[(PostgreSQL)]
     BC --> PLAN[Editor 2D y procesamiento local]
     PLAN --> VIEW[Three.js / visor 3D]
     OCR[Tesseract.js y PDF.js locales] --> PLAN
@@ -168,7 +168,7 @@ Principios aplicados:
 - La infraestructura implementa esos puertos.
 - Un contexto no accede a las rutas internas de otro; utiliza contratos públicos.
 - La composición entre varios dominios se realiza en `src/composition`.
-- Las páginas de Next.js seleccionan pantallas y las rutas de API delegan la lógica de negocio.
+- Las páginas de Next.js seleccionan pantallas; el backend ejecuta autorización, reglas y persistencia.
 
 ### Contextos funcionales
 
@@ -200,9 +200,8 @@ Las operaciones siguen las convenciones HTTP habituales: `GET`, `POST`, `PATCH` 
 
 ### Persistencia y concurrencia
 
-- La base de datos de ejecución se encuentra en `.data/ark.sqlite`.
-- SQLite utiliza transacciones, modo WAL y tiempo de espera para operaciones concurrentes.
-- Las reglas que relacionan recursos de varios módulos se validan dentro de la misma transacción.
+- La base de datos de ejecución es PostgreSQL, configurada con `DATABASE_URL` en el backend.
+- Los vínculos entre proyectos, usuarios y recursos tienen claves foráneas; las operaciones entre contextos usan transacciones.
 - Los cambios utilizan revisiones optimistas mediante `ETag` e `If-Match`.
 - Una actualización desactualizada se rechaza en lugar de sobrescribir el trabajo más reciente.
 - Las preferencias personales, el terreno y algunos ajustes visuales todavía se conservan en el navegador.
@@ -219,21 +218,11 @@ No existe coedición simultánea en tiempo real. Si otro usuario guardó primero
 - Registro del autor real desde la sesión; la API no confía en identidades enviadas por el cliente.
 - Separación entre información interna y contenido compartido con clientes.
 
-La versión actual está destinada a una instancia local de estudio y no debe exponerse directamente como un SaaS público sin completar las medidas indicadas en la sección de límites.
+La API añade CORS explícito, control de origen en escrituras autenticadas, limitación de intentos de inicio de sesión y una bitácora inmutable. Aún faltan las medidas indicadas en la sección de límites para operar como SaaS público.
 
-## Arquitectura backend planificada
+## Backend actual
 
-La evolución prevista separará el backend actual de Next.js y trasladará las reglas y la persistencia principal a una aplicación dedicada.
-
-| Componente | Tecnología prevista | Propósito |
-| --- | --- | --- |
-| Servicio backend | Java 21, Spring Boot y Maven | Implementar las reglas de negocio y los módulos de la aplicación |
-| Estilo arquitectónico | Monolito modular | Mantener un solo despliegue con límites internos claros entre dominios |
-| Punto de entrada | API Gateway | Centralizar el acceso y exponer endpoints con nomenclatura REST uniforme |
-| Base de datos | PostgreSQL | Almacenar cuentas, proyectos, tareas, documentos, comentarios, entregables y demás información transaccional |
-| Frontend | Next.js, React y TypeScript | Consumir la API y presentar los espacios de trabajo a cada tipo de usuario |
-
-Esta arquitectura corresponde a la siguiente etapa del proyecto; no debe confundirse con la implementación actual basada en Route Handlers de Next.js y SQLite. La migración deberá incluir contratos REST versionados, scripts de base de datos, respaldo, validación de integridad y pruebas de integración.
+El servicio hermano `teluria-backend` organiza dominio, aplicación, infraestructura y composición por bounded context. Ejecuta migraciones PostgreSQL versionadas, valida referencias entre tablas e incluye un importador de los datos SQLite anteriores. Consulta su [guía de despliegue](../teluria-backend/docs/deployment.md) antes de conectar Supabase y Render.
 
 ## Tecnologías actuales
 
@@ -241,8 +230,8 @@ Esta arquitectura corresponde a la siguiente etapa del proyecto; no debe confund
 | --- | --- |
 | Aplicación web | Next.js 16, React 19 y TypeScript |
 | Estilos | Tailwind CSS y estilos propios con temas claro/oscuro |
-| API | Route Handlers de Next.js sobre Node.js |
-| Persistencia | SQLite nativo |
+| API | Servicio Node.js independiente con rutas REST versionadas |
+| Persistencia | PostgreSQL, preparado para Supabase |
 | Visualización 3D | Three.js, React Three Fiber y Drei |
 | PDF | PDF.js y PDF-Lib |
 | OCR | Tesseract.js con español, inglés y portugués |
@@ -254,16 +243,17 @@ Esta arquitectura corresponde a la siguiente etapa del proyecto; no debe confund
 - Node.js 24 o posterior.
 - npm.
 - Navegador web moderno.
-- Disco local con permisos de escritura.
+- PostgreSQL accesible desde el backend.
 
 Para el visor 3D se recomienda utilizar un navegador con WebGL habilitado. Una tarjeta gráfica dedicada no es obligatoria para los modelos demostrativos.
 
 ## Instalación y ejecución local
 
-Desde la carpeta del frontend:
+Primero, desde `teluria-backend`, configura `.env` según `.env.example`, ejecuta `npm ci`, `npm run db:migrate` y `npm run dev`. Luego, desde la carpeta del frontend:
 
-```bash
-npm install
+```powershell
+$env:TELURIA_API_URL='http://127.0.0.1:8000'
+npm ci
 npm run dev
 ```
 
@@ -273,7 +263,7 @@ Después, abrir:
 http://localhost:3000/projects
 ```
 
-En la primera visita, la aplicación solicitará la creación de la cuenta propietaria. Esa cuenta recibirá la propiedad de los proyectos migrados. Las cuentas posteriores únicamente verán proyectos propios o aquellos a los que hayan sido invitadas.
+En una base vacía, el primer registro debe usar el correo `TELURIA_OWNER_EMAIL` configurado en el backend. Las cuentas posteriores necesitan una invitación. Si se importaron datos, los usuarios existentes inician sesión de nuevo.
 
 No se debe exponer la pantalla de configuración inicial en una red pública.
 
@@ -285,44 +275,34 @@ No se debe exponer la pantalla de configuración inicial en una red pública.
 | `npm run build` | Preparar recursos y generar la compilación de producción |
 | `npm run start` | Ejecutar una compilación existente |
 | `npm run lint` | Revisar la calidad estática del código |
-| `npm run test:workspace` | Probar recursos de gestión y persistencia |
-| `npm run test:collaboration` | Probar autenticación, roles y flujos de colaboración |
+| `npm run test:workspace` | Probar gestión contra una URL QA configurada con `ARK_TEST_URL` |
+| `npm run test:collaboration` | Probar colaboración contra una URL QA configurada con `ARK_TEST_URL` |
 | `npm run test:plans` | Probar calibración y reglas geométricas |
 | `npm run test:plans:browser` | Probar en navegador el flujo de importación de planos |
 | `npm run prepare:plans` | Preparar localmente PDF.js, Tesseract y sus modelos |
 
 ## Ejecución de pruebas aisladas
 
-Para evitar que las pruebas modifiquen la base normal, se puede iniciar el servidor en modo QA:
+El backend usa PostgreSQL embebido en memoria para las pruebas; no toca Supabase ni los datos normales:
 
 ```powershell
-$env:ARK_TEST_MODE='1'
-npm run dev -- --hostname 127.0.0.1 --port 3010
+cd ../teluria-backend
+npm test
+npm run test:contract
 ```
 
-En otra terminal:
+Las pruebas de geometría del frontend siguen disponibles en esta carpeta:
 
 ```bash
-npm run test:workspace
-npm run test:collaboration
 npm run test:plans
 npm run test:plans:browser
 ```
 
-Los registros de prueba se guardan en `.data/qa/ark.sqlite`. Las pruebas verifican la cabecera del modo QA antes de crear información.
+Las suites de workspace y colaboración se ejecutan mediante `test:contract` contra el backend embebido.
 
 ## Datos y copias de seguridad
 
-En la primera inicialización, SQLite importa `.data/workspace-db.json` si existe; de lo contrario utiliza `data/workspace-db.json` como semilla. El archivo anterior se conserva sin modificaciones.
-
-Para crear una copia consistente:
-
-1. Detener el servidor.
-2. Copiar el directorio `.data` completo.
-3. Incluir los archivos auxiliares WAL de SQLite si están presentes.
-4. Verificar periódicamente que el respaldo pueda restaurarse.
-
-Los documentos y la base de datos no cuentan todavía con un sistema automático de copias cifradas.
+`teluria-backend` puede revisar e importar el antiguo `.data/ark.sqlite` con `npm run db:import` y `npm run db:import -- --apply`. El importador no modifica el origen y solo escribe en una base PostgreSQL vacía. Antes de usar datos reales, configura respaldos y verifica una restauración en Supabase. Los documentos aún no usan almacenamiento de objetos.
 
 ## Estructura principal del repositorio
 
@@ -333,10 +313,10 @@ frontend/
 ├── public/                     # Traducciones y recursos estáticos
 ├── scripts/                    # Preparación y pruebas de integración
 ├── src/
-│   ├── app/                    # Páginas y rutas REST de Next.js
+│   ├── app/                    # Páginas de Next.js
 │   ├── bounded-contexts/       # Módulos del dominio
 │   ├── composition/            # Orquestación entre contextos
-│   ├── kernel/                 # Identidad, revisiones y persistencia compartida
+│   ├── kernel/                 # Identidad y revisiones compartidas
 │   └── shared/                 # Componentes y utilidades técnicas comunes
 ├── package.json
 └── README.md
@@ -344,13 +324,13 @@ frontend/
 
 ## Alcance y límites conocidos
 
-Ark es actualmente un prototipo funcional para una instancia local de estudio, no un SaaS público listo para producción.
+Ark tiene un backend desplegable, pero aún no es un SaaS público listo para producción.
 
 - Las invitaciones se comparten manualmente; no se envían correos.
 - Las notificaciones son internas y se actualizan periódicamente o al recuperar el foco de la ventana; no usan WebSockets.
 - No existe recuperación de contraseña ni verificación de correo electrónico.
 - El almacenamiento de documentos no utiliza todavía un servicio de objetos escalable ni análisis antivirus.
-- SQLite está pensado para la instancia local actual, no para múltiples servidores concurrentes.
+- Los archivos de documentos siguen guardándose en PostgreSQL como datos codificados; conviene moverlos a almacenamiento de objetos para escalar.
 - El Gantt utiliza dependencias fin-a-inicio y días calendario, sin nivelación de recursos.
 - La comparación de versiones es visual; no interpreta automáticamente cambios del plano.
 - La detección de planos y el OCR pueden equivocarse y requieren revisión humana.
@@ -369,4 +349,4 @@ Antes de una publicación externa se deben incorporar, como mínimo, recuperaci�
 
 ## Estado del proyecto
 
-Ark demuestra un flujo completo de gestión y coordinación para proyectos arquitectónicos dentro de una instalación local: desde la creación del proyecto y la organización del equipo hasta la entrega, la decisión del cliente y el reporte final. La siguiente etapa técnica será consolidar el backend planificado con Java 21, Spring Boot, Maven y PostgreSQL, conservando los límites de dominio y los contratos REST ya definidos.
+Ark demuestra un flujo completo de gestión y coordinación para proyectos arquitectónicos. El backend modular y la migración a PostgreSQL ya están implementados; la conexión a un proyecto Supabase real y el despliegue en Render dependen de las credenciales y servicios del entorno final.

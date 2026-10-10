@@ -48,7 +48,7 @@ export async function loadCoordination(
     get<CoordinationData["comments"][number]>("comments"),
     get<DeliverablePackage>("deliverable-packages"),
     get<Notification>("notifications"),
-    get<ChangeEntry>("change-log", role !== "client"),
+    get<ChangeEntry>("audit-entries", role !== "client"),
     get<CoordinationData["invitations"][number]>(
       "invitations",
       ["owner", "architect"].includes(role),
