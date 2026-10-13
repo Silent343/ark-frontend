@@ -77,9 +77,19 @@ const cameraOptions: { id: CameraPreset; label: string; icon: typeof Orbit }[] =
 
 /** Navigable procedural 3D presentation studio. */
 export function ModelScreen({ projectId }: { projectId: string }) {
-  const { data: workspace, loading, error, reload } = useProjectWorkspace(projectId);
+  const {
+    data: workspace,
+    loading,
+    error,
+    reload,
+  } = useProjectWorkspace(projectId);
   const reconstruction = useCadReconstruction(workspace?.blueprint);
-  const data = workspace ? { ...workspace, blueprint: reconstruction.blueprint ?? workspace.blueprint } : null;
+  const data = workspace
+    ? {
+        ...workspace,
+        blueprint: reconstruction.blueprint ?? workspace.blueprint,
+      }
+    : null;
   const { t } = useI18n();
   const { settings: renderSettings, update: updateRenderSettings } =
     useRenderSettings(projectId);
@@ -90,16 +100,25 @@ export function ModelScreen({ projectId }: { projectId: string }) {
   const [camera, setCamera] = useState<CameraPreset>("Isometric");
   const [viewMode, setViewMode] = useState<ModelViewMode>("Architecture");
   const [showRoof, setShowRoof] = useState(false);
-  const [showTerrain, setShowTerrain] = useState(true);
+  const [showTerrain, setShowTerrain] = useState(false);
   const [isolatedLevel, setIsolatedLevel] = useState<number | "All">("All");
   const [siteSelection, setSiteSelection] =
     useState<ConstructionSiteSelection | null>(null);
   if (loading) return <ModelSkeleton />;
-  if (reconstruction.loading) return <div className="pm-card pm-empty" role="status"><Layers3 size={28} /><h2>Reconstruyendo el edificio</h2><p>Alineando plantas, aberturas y superficies del CAD…</p></div>;
+  if (reconstruction.loading)
+    return (
+      <div className="pm-card pm-empty" role="status">
+        <Layers3 size={28} />
+        <h2>Reconstruyendo el edificio</h2>
+        <p>Alineando plantas, aberturas y superficies del CAD…</p>
+      </div>
+    );
   if (error || reconstruction.error || !data)
     return (
       <ErrorState
-        message={error ?? reconstruction.error ?? "No project data was returned."}
+        message={
+          error ?? reconstruction.error ?? "No project data was returned."
+        }
         onRetry={reload}
       />
     );
@@ -147,17 +166,47 @@ export function ModelScreen({ projectId }: { projectId: string }) {
           }
         />
         {data.blueprint.cad && (
-          <div className="cad-note" role="note">
-            <strong>Reconstrucción CAD · propuesta para revisión</strong>
+          <details className="cad-note">
+            <summary>
+              Reconstrucción CAD · propuesta para revisión
+              {!data.blueprint.cad.unitConfirmed && " · unidades pendientes"}
+            </summary>
             <p>
               Revisa plantas, alturas y función de las capas en el editor 2D.
-              Las aberturas se vinculan a sus muros y el mobiliario se conserva
-              como trazado de referencia. La reconstrucción requiere revisión;
-              no constituye un modelo BIM validado.
+              Las aberturas se vinculan a sus muros. Los bloques identificados
+              se representan con mobiliario paramétrico; los símbolos ambiguos
+              se conservan como trazado, sin inventar su forma. La
+              reconstrucción requiere revisión; no constituye un modelo BIM
+              validado.
               {!data.blueprint.cad.unitConfirmed &&
                 " La unidad del dibujo todavía no está confirmada."}
             </p>
-          </div>
+          </details>
+        )}
+        {!!data.blueprint.reconstruction && (
+          <details className="cad-note">
+            <summary>
+              Interpretación: {data.blueprint.walls.length} muros ·{" "}
+              {data.blueprint.fixtures?.length ?? 0} elementos de mobiliario y
+              equipo
+            </summary>
+            <p>
+              {data.blueprint.reconstruction.unresolvedSymbols ?? 0} grupos de
+              símbolos aún sin clasificar. Los objetos generados conservan la
+              huella del plano; sus alturas y acabados son propuestas, no datos
+              BIM.
+            </p>
+            {!!data.blueprint.reconstruction.inferredLayers?.length && (
+              <p>
+                Capas propuestas por geometría:{" "}
+                {data.blueprint.reconstruction.inferredLayers.join(", ")}.
+                Confirma su función en el editor 2D.
+              </p>
+            )}
+            <Link href={`/projects/${projectId}/editor?mode=edit`}>
+              Revisar unidades, capas y plantas
+            </Link>
+          </details>
         )}
         <Panel className="mt-6 overflow-hidden">
           <div className="flex min-h-14 items-center justify-between gap-3 border-b border-[#dfe2d9] px-4 py-3">
@@ -242,6 +291,25 @@ export function ModelScreen({ projectId }: { projectId: string }) {
           projectId={projectId}
           onSelectionChange={setSiteSelection}
         />
+        {data.blueprint.cad && (
+          <details className="cad-note">
+            <summary>
+              Propuesta 3D · {data.blueprint.fixtures?.length ?? 0} objetos
+              identificados ·{" "}
+              {data.blueprint.reconstruction?.unresolvedSymbols ?? 0} símbolos
+              pendientes
+            </summary>
+            <p>
+              La geometría procede del dibujo. Alturas, acabados y modelos de
+              mobiliario son aproximaciones que necesitan revisión.{" "}
+              {!data.blueprint.cad.unitConfirmed &&
+                "Falta confirmar la unidad del CAD."}
+            </p>
+            <Link href={`/projects/${projectId}/editor?mode=edit`}>
+              Revisar interpretación en 2D
+            </Link>
+          </details>
+        )}
       </div>
       <div className="model-workbench">
         <Panel className="model-scene-panel overflow-hidden">
@@ -299,7 +367,9 @@ export function ModelScreen({ projectId }: { projectId: string }) {
             </div>
             <div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-white/40 bg-white/75 px-3 py-2 text-[10px] font-semibold text-[#3f4a44] backdrop-blur">
               {viewMode === "Structure"
-                ? data.blueprint.cad ? "Columnas y losas detectadas · muros de referencia" : "Estructura portante · vigas · columnas · nodos"
+                ? data.blueprint.cad
+                  ? "Columnas y losas detectadas · muros de referencia"
+                  : "Estructura portante · vigas · columnas · nodos"
                 : `${levelCount} ${levelCount === 1 ? "nivel" : "niveles"} · ${data.blueprint.rooms.length} ambientes · ${data.blueprint.walls.length} muros${showTerrain && siteSelection ? ` · lote ${siteSelection.lotAreaM2} m²` : ""}`}
             </div>
           </div>
@@ -309,7 +379,8 @@ export function ModelScreen({ projectId }: { projectId: string }) {
           <div className="plan-review-status">
             <strong>
               {t(
-                data.blueprint.calibration && (!data.blueprint.cad || data.blueprint.cad.unitConfirmed)
+                data.blueprint.calibration &&
+                  (!data.blueprint.cad || data.blueprint.cad.unitConfirmed)
                   ? "render.calibrated"
                   : "render.uncalibrated",
               )}
@@ -348,7 +419,9 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               </button>
             </div>
             <p className="mt-3 text-[9px] leading-4 text-[#849089]">
-              {data.blueprint.cad ? "Aísla columnas y losas detectadas; los muros se muestran transparentes. No se infieren vigas ni armaduras ausentes en el CAD." : "La vista portante aísla columnas, vigas y nodos generados desde la geometría semántica."}
+              {data.blueprint.cad
+                ? "Aísla columnas y losas detectadas; los muros se muestran transparentes. No se infieren vigas ni armaduras ausentes en el CAD."
+                : "La vista portante aísla columnas, vigas y nodos generados desde la geometría semántica."}
             </p>
           </Panel>
           <Panel className="p-5">

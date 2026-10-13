@@ -1,6 +1,7 @@
 import { compileCadBlueprint } from "../domain/cad-reconstruction";
 import type { Blueprint } from "../domain/entities/blueprint";
 import type { CadPlan } from "../domain/entities/cad-plan";
+import { enrichCadEvidence, detectCadRegions } from "../domain/cad-operations";
 
 // Topology and raster connectivity are CPU work, independent of the interactive canvas.
 self.onmessage = (
@@ -8,6 +9,17 @@ self.onmessage = (
 ) => {
   try {
     const { base, cad, height } = event.data;
+    if ((base.reconstruction?.version ?? 0) < 3) {
+      enrichCadEvidence(cad);
+      // Repair only the known automatic crop bug; preserve explicitly edited region bounds and elevations.
+      if (
+        !cad.regions.length ||
+        cad.regions.every(
+          (r) => r.id.startsWith("region-cad-") && /^TERRAZA/i.test(r.name),
+        )
+      )
+        cad.regions = detectCadRegions(cad, height);
+    }
     self.postMessage({ blueprint: compileCadBlueprint(base, cad, height) });
   } catch (error) {
     self.postMessage({

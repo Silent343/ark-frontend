@@ -5,7 +5,13 @@ import type {
   CadRegion,
   CadRole,
 } from "./entities/cad-plan";
-import { cadEntityBounds } from "./cad-operations";
+import { cadEntityBounds, cadBounds } from "./cad-operations";
+import {
+  fixtureKind,
+  blockRole,
+  isDoorArc,
+  type FixtureKind,
+} from "./cad-evidence";
 import { convexHull, detectFloorSurfaces } from "./cad-floor-mask";
 import {
   contains,
@@ -99,8 +105,23 @@ export function symbols(
   units: number,
 ): SymbolGroup[] {
   const groups: CadEntity[][] = [];
+  const blocks = new Map<string, CadEntity[]>();
+  for (const e of entities)
+    if (e.group && e.kind !== "text") {
+      const list = blocks.get(e.group) ?? [];
+      list.push(e);
+      blocks.set(e.group, list);
+    }
+  const grouped = new Set<string>();
+  for (const [id, items] of blocks) {
+    const b = cadBounds(items);
+    if (Math.max(b.maxX - b.minX, b.maxY - b.minY) * units <= 8) {
+      groups.push(items);
+      grouped.add(id);
+    }
+  }
   const rows = entities
-    .filter((e) => e.kind !== "text")
+    .filter((e) => e.kind !== "text" && !grouped.has(e.group ?? ""))
     .map((e) => ({ e, b: cadEntityBounds(e) }))
     .sort((a, b) => a.b.minX - b.b.minX);
   const parent = rows.map((_, i) => i);
@@ -287,7 +308,7 @@ function findOpening(
 }
 
 /** Parallel, regularly spaced treads identify individual flights, including rotated switchbacks. */
-function stairFlights(entities: CadEntity[], units: number) {
+export function stairFlights(entities: CadEntity[], units: number) {
   const lines = mergeLines(linesOf(entities, units), -0.03).filter((l) => {
     const n = distance(l.a, l.b);
     return n >= 0.65 && n <= 2.1;
@@ -370,18 +391,22 @@ export function compileCadBlueprint(
 ): Blueprint {
   const units = cad.metersPerCadUnit,
     roles = new Map(cad.layers.map((l) => [l.name, l.role]));
+  const roleOf = (e: CadEntity) =>
+    e.group?.includes("dimension")
+      ? "reference"
+      : (e.role ?? roles.get(e.layer));
   const plans = cad.regions
     .filter((r) => r.enabled)
     .map((region) => {
       const entities = cad.entities.filter((e) => inRegion(e, region));
       const raw = linesOf(
-        entities.filter((e) => roles.get(e.layer) === "wall"),
+        entities.filter((e) => roleOf(e) === "wall"),
         units,
       );
       // Structural layers can contain both compact columns and long shear walls. Paired faces distinguish them from grid axes.
       const structural = reconstructWalls(
         linesOf(
-          entities.filter((e) => roles.get(e.layer) === "column"),
+          entities.filter((e) => roleOf(e) === "column"),
           units,
         ),
       ).filter((w) => w.paired && distance(w.a, w.b) > 1.3);
@@ -446,11 +471,14 @@ export function compileCadBlueprint(
       warnings: ["cad-semantic-review"],
     },
     reconstruction: {
-      version: 2,
+      version: 3,
       pairedWalls: 0,
       sourceEdges: plans.reduce((n, p) => n + p.raw.length, 0),
       alignedPlans: 0,
       namedSpaces: 0,
+      fixtureCount: 0,
+      unresolvedSymbols: 0,
+      inferredLayers: cad.layers.filter((l) => l.inferred).map((l) => l.name),
     },
   };
   if (!reference) {
@@ -494,7 +522,7 @@ export function compileCadBlueprint(
     // Column layers often contain long grid axes too. Only closed, compact structural contours become columns.
     const columnContours = floorFaces(
       linesOf(
-        entities.filter((e) => roles.get(e.layer) === "column"),
+        entities.filter((e) => roleOf(e) === "column"),
         units,
       ).filter((l) => distance(l.a, l.b) <= 1.6),
       0.025,
@@ -537,11 +565,33 @@ export function compileCadBlueprint(
     }> = [];
     const openingGroups = (["window", "door"] as const).flatMap((role) =>
       symbols(
-        entities.filter((e) => roles.get(e.layer) === role),
+        entities.filter((e) => roleOf(e) === role),
         role,
         units,
       ),
     );
+    // Mixed joinery layers contain both doors and windows. A door needs swing/block evidence.
+    for (const group of openingGroups) {
+      if (
+        group.role === "door" &&
+        group.entities.every((e) =>
+          /puertas?.*ventanas?|doors?.*windows?/i.test(e.layer),
+        ) &&
+        !group.entities.some(
+          (e) =>
+            isDoorArc(e, units) ||
+            (e.blockName && blockRole(e.blockName) === "door"),
+        )
+      ) {
+        const box = orientedBox(group.points, 0);
+        if (
+          Math.max(box.width, box.depth) /
+            Math.max(0.01, Math.min(box.width, box.depth)) >
+          2.5
+        )
+          group.role = "window";
+      }
+    }
     for (const group of openingGroups) {
       const match = findOpening(
         group,
@@ -573,25 +623,25 @@ export function compileCadBlueprint(
         point: [e.x * units, e.y * units],
         name: e.value,
         void: /VACIO|POZO|SHAFT|DUCTO|ASCENSOR/.test(normalize(e.value)),
-        room: /DORMITORIO|SALA|COCINA|COMEDOR|BA[ÑN]O|PASILLO|PALIER|LOCAL|LAVANDER|ESTACIONAMIENTO|CIRCULACION|DEPOSITO/.test(
+        room: /DORMITORIO|RECAMARA|SALA|COCINA|COMEDOR|BA[ÑN]O|PASILLO|PALIER|LOCAL|LAVANDER|ESTACIONAMIENTO|CIRCULACION|DEPOSITO|AUDITORIO|OFICINA|ALMACEN|BEDROOM|LIVING|DINING|KITCHEN|BATHROOM|OFFICE/.test(
           normalize(e.value),
         ),
       })),
     );
     const flights = stairFlights(
-      entities.filter((e) => roles.get(e.layer) === "stair"),
+      entities.filter((e) => roleOf(e) === "stair"),
       units,
     );
     const roofContours = floorFaces(
       linesOf(
-        entities.filter((e) => roles.get(e.layer) === "roof"),
+        entities.filter((e) => roleOf(e) === "roof"),
         units,
       ),
     );
     const installations = (["electrical", "plumbing"] as const)
       .flatMap((role) =>
         symbols(
-          entities.filter((e) => roles.get(e.layer) === role),
+          entities.filter((e) => roleOf(e) === role),
           role,
           units,
         ),
@@ -601,9 +651,74 @@ export function compileCadBlueprint(
         return Math.max(b.width, b.depth) < 2;
       });
     const details = linesOf(
-      entities.filter((e) => roles.get(e.layer) === "furniture"),
+      entities.filter((e) => roleOf(e) === "furniture"),
       units,
     ).flatMap((l) => [...toPlan(l.a), ...toPlan(l.b)]);
+    const furniture = symbols(
+      entities.filter((e) => roleOf(e) === "furniture"),
+      "furniture",
+      units,
+    );
+    const seating = labels.some((e) =>
+      /AUDITORIO|AUDITORIUM|BUTACAS/.test(normalize(e.value)),
+    );
+    const fixtures = furniture.flatMap((group) => {
+      const name = group.entities.find((e) => e.blockName)?.blockName ?? "";
+      let kind = fixtureKind(name);
+      const edges = linesOf(group.entities, units).sort(
+        (a, b) => distance(b.a, b.b) - distance(a.a, a.b),
+      );
+      const angle = edges[0]
+        ? Math.atan2(
+            edges[0].b[1] - edges[0].a[1],
+            edges[0].b[0] - edges[0].a[0],
+          )
+        : 0;
+      const box = orientedBox(group.points, angle);
+      let evidence: "block" | "repeated-symbol" = "block";
+      if (
+        !kind &&
+        seating &&
+        furniture.length > 20 &&
+        group.entities.length >= 4 &&
+        Math.min(box.width, box.depth) >= 0.3 &&
+        Math.max(box.width, box.depth) <= 0.95
+      ) {
+        kind = "chair";
+        evidence = "repeated-symbol";
+      }
+      if (
+        !kind ||
+        Math.min(box.width, box.depth) < 0.15 ||
+        Math.max(box.width, box.depth) > 8
+      ) {
+        next.reconstruction!.unresolvedSymbols!++;
+        return [];
+      }
+      const heights: Record<FixtureKind, number> = {
+        chair: 0.85,
+        table: 0.75,
+        bed: 0.55,
+        sofa: 0.8,
+        toilet: 0.7,
+        sink: 0.85,
+        cabinet: 0.9,
+        equipment: 1.2,
+        plant: 1.5,
+        vehicle: 1.5,
+      };
+      return [
+        {
+          ...box,
+          angle,
+          kind,
+          name: name || "Butaca · propuesta por repetición",
+          evidence,
+          height: heights[kind],
+          sourceIds: group.entities.map((e) => e.id).slice(0, 500),
+        },
+      ];
+    });
     for (let floor = 0; floor < region.repeat; floor++) {
       const levelId = `${region.id}-${floor}`,
         entry = levels.findIndex((l) => l.plan === plan && l.floor === floor),
@@ -758,33 +873,50 @@ export function compileCadBlueprint(
           kind: group.role === "electrical" ? "outlet" : "water",
         });
       }
-      if (nextElevation !== undefined)
-        flights.forEach((flight, i) => {
-          const partner = flights.findIndex(
-            (other, j) =>
-              j !== i &&
-              distance(other.center, flight.center) < 3.8 &&
-              Math.abs(Math.sin(other.angle - flight.angle)) < 0.15,
-          );
-          const paired = partner !== -1,
-            second = paired && i > partner,
-            [x, y] = toPlan(flight.center);
-          next.stairs!.push({
-            id: `stair-${levelId}-${i}`,
-            levelId,
-            x,
-            y,
-            radius: (flight.width * PX) / 2,
-            type: "straight",
-            length: flight.length * PX,
-            rotation:
-              (-(Math.PI / 2 + flight.angle + (second ? Math.PI : 0)) * 180) /
-              Math.PI,
-            rise: paired ? height / 2 : height,
-            baseElevation: second ? height / 2 : 0,
-            stepCount: flight.steps,
-          });
+      flights.forEach((flight, i) => {
+        const partner = flights.findIndex(
+          (other, j) =>
+            j !== i &&
+            distance(other.center, flight.center) < 3.8 &&
+            Math.abs(Math.sin(other.angle - flight.angle)) < 0.15,
+        );
+        const paired = partner !== -1,
+          second = paired && i > partner,
+          [x, y] = toPlan(flight.center);
+        next.stairs!.push({
+          id: `stair-${levelId}-${i}`,
+          levelId,
+          x,
+          y,
+          radius: (flight.width * PX) / 2,
+          type: "straight",
+          length: flight.length * PX,
+          rotation:
+            (-(Math.PI / 2 + flight.angle + (second ? Math.PI : 0)) * 180) /
+            Math.PI,
+          rise: paired ? height / 2 : height,
+          baseElevation: second ? height / 2 : 0,
+          stepCount: flight.steps,
         });
+      });
+      for (const [i, item] of fixtures.entries()) {
+        const [x, y] = toPlan(item.center);
+        next.fixtures!.push({
+          id: `fixture-${levelId}-${i}`,
+          levelId,
+          x,
+          y,
+          width: item.width * PX,
+          depth: item.depth * PX,
+          height: item.height,
+          rotation: (-item.angle * 180) / Math.PI,
+          kind: item.kind,
+          name: item.name,
+          evidence: item.evidence,
+          sourceIds: item.sourceIds,
+        });
+        next.reconstruction!.fixtureCount!++;
+      }
       next.floorDetails!.push({ levelId, segments: details });
     }
   }

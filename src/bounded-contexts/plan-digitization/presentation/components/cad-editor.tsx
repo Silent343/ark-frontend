@@ -136,12 +136,11 @@ export function CadEditor({
     event.preventDefault();
     try {
       const snapshot = current.current;
-      const next = await compileCadModel(
-        base.current,
-        snapshot,
-        floorHeight,
-      );
-      if (current.current !== snapshot) throw new Error("El plano cambió durante la reconstrucción. Espera a que se guarde y vuelve a abrir el modelo.");
+      const next = await compileCadModel(base.current, snapshot, floorHeight);
+      if (current.current !== snapshot)
+        throw new Error(
+          "El plano cambió durante la reconstrucción. Espera a que se guarde y vuelve a abrir el modelo.",
+        );
       await commit(next);
       changed.current = false;
       setDirty(false);
@@ -874,8 +873,18 @@ export function CadEditor({
                         ...plan,
                         layers: plan.layers.map((v) =>
                           v.name === l.name
-                            ? { ...v, role: e.target.value as CadRole }
+                            ? {
+                                ...v,
+                                role: e.target.value as CadRole,
+                                inferred: false,
+                                reviewed: true,
+                              }
                             : v,
+                        ),
+                        entities: plan.entities.map((entity) =>
+                          entity.layer === l.name
+                            ? { ...entity, role: undefined }
+                            : entity,
                         ),
                       });
                     }}

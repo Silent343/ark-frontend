@@ -16,6 +16,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
 import { geometryOnLevel } from "@/bounded-contexts/plan-digitization/domain/plan-levels";
 import { buildSceneModel } from "../../application/use-cases/build-scene-model";
+import { buildFixtureParts } from "../../application/fixture-parts";
 
 type Box = {
   id?: string;
@@ -89,7 +90,7 @@ function BoxBatch({
   );
 }
 
-function FloorSurfaces({
+export function FloorSurfaces({
   plan,
   scene,
   elevation = 0,
@@ -219,6 +220,37 @@ const glassMaterial = {
 };
 const doorMaterial = { color: "#a0907e", roughness: 0.8 };
 const slabMaterial = { color: "#c9c9c3", roughness: 0.92 };
+
+function Furnishings({ plan, scene }: { plan: Blueprint; scene: Scene }) {
+  const batches = useMemo(
+    () =>
+      buildFixtureParts(
+        plan.fixtures ?? [],
+        scene.centerX,
+        scene.centerY,
+        scene.scale,
+      ),
+    [plan.fixtures, scene.centerX, scene.centerY, scene.scale],
+  );
+  const finishes = {
+    wood: "#a88b69",
+    fabric: "#658080",
+    metal: "#60696c",
+    ceramic: "#edece6",
+    green: "#66805b",
+  };
+  return (
+    <>
+      {(Object.keys(batches) as Array<keyof typeof batches>).map((key) => (
+        <BoxBatch
+          key={key}
+          boxes={batches[key]}
+          material={{ color: finishes[key], roughness: 0.78 }}
+        />
+      ))}
+    </>
+  );
+}
 
 function CadLevel({
   plan,
@@ -361,6 +393,7 @@ function CadLevel({
   return (
     <>
       <FloorSurfaces plan={plan} scene={scene} />
+      {!structural && <Furnishings plan={plan} scene={scene} />}
       {showRoof && <CadRoofs plan={plan} scene={scene} />}
       <BoxBatch
         boxes={batches.columns}

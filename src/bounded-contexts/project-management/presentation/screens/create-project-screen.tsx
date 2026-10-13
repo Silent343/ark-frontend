@@ -20,10 +20,8 @@ import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { ProjectCoverField } from "../components/project-cover-field";
 import { planDigitization } from "@/bounded-contexts/plan-digitization/public";
 import { loadCadPlanSource } from "@/bounded-contexts/plan-digitization/infrastructure/browser-cad-source";
-import {
-  createCadPlan,
-  compileCadBlueprint,
-} from "@/bounded-contexts/plan-digitization/domain/cad-operations";
+import { createCadPlan } from "@/bounded-contexts/plan-digitization/domain/cad-operations";
+import { compileCadModel } from "@/bounded-contexts/plan-digitization/infrastructure/compile-cad-model";
 
 const initialForm: CreateProjectInput = {
   name: "",
@@ -91,7 +89,9 @@ export function CreateProjectScreen() {
             ].includes(file.type) || file.size > 3 * 1024 * 1024,
       )
     ) {
-      setError(t("pm.fileError"));
+      setError(
+        "Admite un CAD DWG/DXF de hasta 12 MB y PDF, PNG, JPG o WebP de hasta 3 MB cada uno. Máximo 12 archivos en total.",
+      );
       return;
     }
     setError("");
@@ -132,7 +132,7 @@ export function CreateProjectScreen() {
               form.floorHeight,
             );
             await planDigitization.saveBlueprint.execute(
-              compileCadBlueprint(base, cad, form.floorHeight),
+              await compileCadModel(base, cad, form.floorHeight),
             );
           } finally {
             source.cad?.dispose();
@@ -178,7 +178,10 @@ export function CreateProjectScreen() {
         <div>
           <p className="pm-eyebrow">{t("pm.newProject")}</p>
           <h1>{t("pm.create.title")}</h1>
-          <p>{t("pm.create.description")}</p>
+          <p>
+            Primero crea el proyecto; después revisa sus planos y prepara el
+            modelo 3D. Puedes empezar sin archivos.
+          </p>
         </div>
       </header>
       <form onSubmit={create}>
@@ -190,11 +193,15 @@ export function CreateProjectScreen() {
         <fieldset disabled={busy} className="pm-create-layout">
           <div className="pm-card pm-create-card">
             <div className="pm-row">
-              <h2>{t("pm.create.details")}</h2>
+              <h2>1. Datos y niveles</h2>
               <Building2 size={23} />
             </div>
+            <p className="pm-footnote">
+              Nombre y ubicación son obligatorios. Los niveles y la altura son
+              valores iniciales editables; no se deducen de una foto.
+            </p>
             <div className="pm-form-grid">
-              <Field label={t("pm.field.name")}>
+              <Field label={`${t("pm.field.name")} *`}>
                 <input
                   required
                   maxLength={200}
@@ -203,7 +210,7 @@ export function CreateProjectScreen() {
                   placeholder={t("pm.create.namePlaceholder")}
                 />
               </Field>
-              <Field label={t("pm.field.location")}>
+              <Field label={`${t("pm.field.location")} *`}>
                 <input
                   required
                   maxLength={200}
@@ -219,8 +226,13 @@ export function CreateProjectScreen() {
                   max={40}
                   step={1}
                   value={form.floors}
+                  aria-describedby="floors-help"
                   onChange={(e) => update("floors", Number(e.target.value))}
                 />
+                <small id="floors-help" className="pm-muted">
+                  Incluye la planta baja. Ej.: planta baja + dos pisos = 3. No
+                  incluye sótanos.
+                </small>
               </Field>
               <Field label={t("pm.create.height")}>
                 <input
@@ -230,10 +242,15 @@ export function CreateProjectScreen() {
                   max={6}
                   step={0.1}
                   value={form.floorHeight}
+                  aria-describedby="height-help"
                   onChange={(e) =>
                     update("floorHeight", Number(e.target.value))
                   }
                 />
+                <small id="height-help" className="pm-muted">
+                  Distancia entre pisos, en metros. 2,8 m es una estimación;
+                  confirma la altura del proyecto.
+                </small>
               </Field>
               <Field label={t("pm.create.basements")}>
                 <input
@@ -243,34 +260,50 @@ export function CreateProjectScreen() {
                   max={10}
                   step={1}
                   value={form.basements ?? 0}
+                  aria-describedby="basements-help"
                   onChange={(e) => update("basements", Number(e.target.value))}
                 />
-              </Field>
-              <Field label={t("pm.create.structure")}>
-                <select
-                  value={form.structureType}
-                  onChange={(e) => update("structureType", e.target.value)}
-                >
-                  {structureOptions.map((value, index) => (
-                    <option key={value} value={value}>
-                      {t("pm.create.structure" + index)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={t("pm.create.soil")}>
-                <select
-                  value={form.soilType}
-                  onChange={(e) => update("soilType", e.target.value)}
-                >
-                  {soilOptions.map((value, index) => (
-                    <option key={value} value={value}>
-                      {t("pm.create.soil" + index)}
-                    </option>
-                  ))}
-                </select>
+                <small id="basements-help" className="pm-muted">
+                  Niveles bajo tierra. Si no hay, deja 0.
+                </small>
               </Field>
             </div>
+            <details className="pm-intake-advanced">
+              <summary>
+                Parámetros de simulación · revisar con un especialista
+              </summary>
+              <p className="pm-footnote">
+                No intervienen en la lectura del plano ni mejoran la detección.
+                Los valores iniciales no sustituyen información estructural o un
+                estudio de suelos.
+              </p>
+              <div className="pm-form-grid">
+                <Field label={t("pm.create.structure")}>
+                  <select
+                    value={form.structureType}
+                    onChange={(e) => update("structureType", e.target.value)}
+                  >
+                    {structureOptions.map((value, index) => (
+                      <option key={value} value={value}>
+                        {t("pm.create.structure" + index)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={t("pm.create.soil")}>
+                  <select
+                    value={form.soilType}
+                    onChange={(e) => update("soilType", e.target.value)}
+                  >
+                    {soilOptions.map((value, index) => (
+                      <option key={value} value={value}>
+                        {t("pm.create.soil" + index)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </details>
             <ProjectCoverField
               value={form.coverImage ?? ""}
               disabled={busy}
@@ -279,8 +312,27 @@ export function CreateProjectScreen() {
             <p className="pm-footnote">{t("pm.create.after")}</p>
           </div>
           <div className="pm-card pm-create-card">
-            <h2>{t("pm.create.source")}</h2>
-            <p className="pm-muted">{t("pm.create.optional")}</p>
+            <h2>2. Planos de referencia</h2>
+            <p className="pm-muted">
+              Opcional · un CAD principal y hasta 11 documentos adicionales.
+            </p>
+            <ul className="pm-intake-requirements">
+              <li>
+                <strong>DWG / DXF:</strong> hasta 12 MB. Puede contener varias
+                plantas. Revisa unidades, capas y niveles en el editor.
+              </li>
+              <li>
+                <strong>Imagen / PDF:</strong> hasta 3 MB por archivo. Usa una
+                planta vista desde arriba, legible y sin perspectiva, con al
+                menos una medida conocida.
+              </li>
+              <li>
+                <strong>Resultado:</strong> una propuesta editable. Alturas,
+                materiales y símbolos ambiguos requieren confirmación; una
+                imagen no contiene por sí sola toda la información de un
+                edificio.
+              </li>
+            </ul>
             <div
               className={
                 "pm-upload-zone" + (dragging ? " pm-upload-active" : "")
@@ -344,7 +396,14 @@ export function CreateProjectScreen() {
                 {files.length ? "Agregar más planos" : t("pm.create.browse")}
               </label>
             </div>
-            <p className="pm-footnote">{t("pm.create.demo")}</p>
+            <p className="pm-footnote">
+              Siguiente paso:{" "}
+              {files.some((file) => /\.(dwg|dxf)$/i.test(file.name))
+                ? "revisar la interpretación del CAD en el editor 2D."
+                : files.length
+                  ? "calibrar la imagen o el PDF, analizarlo y confirmar la propuesta."
+                  : "abrir tu espacio de trabajo y agregar planos cuando quieras."}
+            </p>
             <button
               type="submit"
               className="pm-button pm-primary pm-create-submit"

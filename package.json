@@ -8,6 +8,7 @@
     "prebuild": "npm run prepare:plans",
     "test:plans": "node scripts/test-plan-pipeline.mjs",
     "test:cad": "node scripts/test-cad-pipeline.mjs",
+    "test:evidence": "node scripts/test-plan-evidence.mjs",
     "test:plans:browser": "node scripts/test-plan-browser.mjs",
     "dev": "next dev",
     "build": "next build",

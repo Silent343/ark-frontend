@@ -1,5 +1,6 @@
 import type { CadDocument, Entity } from "@node-projects/acad-ts";
 import type { CadEntity } from "../domain/entities/cad-plan";
+import { cleanCadText } from "../domain/cad-text";
 
 type CadModule = typeof import("@node-projects/acad-ts");
 
@@ -29,6 +30,7 @@ export function extractCadDrawing(
   cad: CadModule,
 ): CadDrawingPreview {
   const shapes: CadShape[] = [];
+  let blockIndex = 0;
   const skipped: Record<string, number> = {};
   const layers = new Map<string, CadLayerPreview>();
   for (const layer of document.layers ?? [])
@@ -64,18 +66,25 @@ export function extractCadDrawing(
     inheritedLayer?: string,
     depth = 0,
     group?: string,
+    blockName?: string,
   ) {
     if (shapes.length >= MAX_SHAPES) {
       skipped.limit = (skipped.limit ?? 0) + 1;
       return;
     }
-    if (entity.isInvisible || depth > 3) return;
+    if (entity.isInvisible || depth > 8) return;
     const layer =
       entity.layer?.name === "0" && inheritedLayer
         ? inheritedLayer
         : (entity.layer?.name ?? inheritedLayer ?? "0");
     const color = colorOf(entity);
-    const identity = { id: `cad-${shapes.length}`, group, layer, color };
+    const identity = {
+      id: `cad-${shapes.length}`,
+      group,
+      blockName,
+      layer,
+      color,
+    };
     const currentLayer = layers.get(layer) ?? {
       name: layer,
       visible: true,
@@ -86,8 +95,15 @@ export function extractCadDrawing(
 
     if (entity instanceof cad.Insert) {
       try {
+        const instance = `block-${entity.handle}-${blockIndex++}`;
         for (const child of entity.explode())
-          add(child, layer, depth + 1, group ?? `block-${entity.handle}`);
+          add(
+            child,
+            layer,
+            depth + 1,
+            instance,
+            entity.block?.name ?? blockName,
+          );
       } catch {
         skipped.Insert = (skipped.Insert ?? 0) + 1;
       }
@@ -113,12 +129,9 @@ export function extractCadDrawing(
     }
     if (entity instanceof cad.TextEntity || entity instanceof cad.MText) {
       const point = entity.insertPoint;
-      const value = (
-        entity instanceof cad.MText ? entity.plainText : entity.value
-      )
-        .replace(/\\P/g, " ")
-        .trim()
-        .slice(0, 200);
+      const value = cleanCadText(
+        entity instanceof cad.MText ? entity.plainText : entity.value,
+      ).slice(0, 200);
       if (value && finitePoint(point.x, point.y))
         shapes.push({
           ...identity,

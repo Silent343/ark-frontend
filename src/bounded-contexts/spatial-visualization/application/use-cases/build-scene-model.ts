@@ -17,7 +17,10 @@ interface ProjectedOpening {
 
 /** Anti-corruption translator from semantic-plan coordinates to scene space. */
 export class BuildSceneModel {
-  execute(blueprint: Blueprint, alignment?: { centerX: number; centerY: number; scale: number }): SceneModel {
+  execute(
+    blueprint: Blueprint,
+    alignment?: { centerX: number; centerY: number; scale: number },
+  ): SceneModel {
     const coordinates = [
       ...blueprint.walls.flatMap((wall) => [wall.start, wall.end]),
       ...blueprint.rooms.flatMap((room) => [
@@ -33,6 +36,10 @@ export class BuildSceneModel {
         [roof.x + roof.width, roof.y + roof.depth],
       ]),
       ...(blueprint.services ?? []).map((point) => [point.x, point.y]),
+      ...(blueprint.fixtures ?? []).flatMap((f) => [
+        [f.x - f.width / 2, f.y - f.depth / 2],
+        [f.x + f.width / 2, f.y + f.depth / 2],
+      ]),
     ];
     if (!coordinates.length)
       coordinates.push([0, 0], [blueprint.width, blueprint.height]);

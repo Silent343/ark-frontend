@@ -15,6 +15,9 @@ interface CadEntityBase {
   layer: string;
   color: string;
   group?: string;
+  /** Original block identity survives explosion; used as evidence, never as a mesh. */
+  blockName?: string;
+  role?: CadRole;
 }
 export type CadEntity = CadEntityBase &
   (
@@ -34,6 +37,8 @@ export interface CadLayer {
   visible: boolean;
   count: number;
   role: CadRole;
+  inferred?: boolean;
+  reviewed?: boolean;
 }
 export interface CadBounds {
   minX: number;

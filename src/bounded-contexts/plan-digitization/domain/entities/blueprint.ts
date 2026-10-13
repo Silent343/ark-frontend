@@ -67,6 +67,7 @@ export interface Stair {
 
 /** Floor contours follow enclosed CAD faces; shafts and stair voids remain holes. */
 export interface FloorSlab {
+  sheetId?: string;
   id: string;
   levelId: string;
   name: string;
@@ -171,6 +172,9 @@ export interface Blueprint {
     sourceEdges: number;
     alignedPlans: number;
     namedSpaces: number;
+    fixtureCount?: number;
+    unresolvedSymbols?: number;
+    inferredLayers?: string[];
   };
   fixtures?: Array<{
     id: string;
@@ -181,6 +185,10 @@ export interface Blueprint {
     depth: number;
     height: number;
     name: string;
+    kind?: import("../cad-evidence").FixtureKind;
+    rotation?: number;
+    evidence?: "block" | "repeated-symbol";
+    sourceIds?: string[];
   }>;
   projectId: string;
   width: number;

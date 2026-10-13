@@ -14,7 +14,7 @@ import {
   PointerLockControls,
   Sky,
 } from "@react-three/drei";
-import { CadBuilding } from "./cad-building";
+import { CadBuilding, FloorSurfaces } from "./cad-building";
 import {
   ACESFilmicToneMapping,
   CatmullRomCurve3,
@@ -169,7 +169,15 @@ function CameraController({
     );
     camera.updateProjectionMatrix();
     invalidate();
-  }, [camera, height, extent, baseElevation, modelViewMode, preset, invalidate]);
+  }, [
+    camera,
+    height,
+    extent,
+    baseElevation,
+    modelViewMode,
+    preset,
+    invalidate,
+  ]);
   return null;
 }
 
@@ -256,7 +264,9 @@ function Building({
         ...plan.walls.flatMap((wall) => [wall.start, wall.end]),
       ];
       const unique = new Map<string, readonly [number, number]>();
-      points.forEach((point) => unique.set(`${Math.round(point[0])}-${Math.round(point[1])}`, point));
+      points.forEach((point) =>
+        unique.set(`${Math.round(point[0])}-${Math.round(point[1])}`, point),
+      );
       return {
         plan,
         model,
@@ -315,40 +325,45 @@ function Building({
           >
             {modelViewMode === "Architecture" ? (
               <>
-                {plan.rooms.map((room, roomIndex) => {
-                  const roomName = room.name.toLowerCase();
-                  const color = roomName.includes("garden")
-                    ? "#789164"
-                    : roomName.includes("garage")
-                      ? "#b48e72"
-                      : roomName.includes("bath")
-                        ? "#d8ddd8"
-                        : roomIndex % 2 === 0
-                          ? "#d8d5cb"
-                          : "#cecfc7";
-                  const inset = blueprint.review ? 0 : 18;
-                  return (
-                    <mesh
-                      key={`${floor}-${room.id}-finish`}
-                      receiveShadow
-                      position={[
-                        (room.x + room.width / 2 - scene.centerX) / scene.scale,
-                        0.012,
-                        (room.y + room.height / 2 - scene.centerY) /
-                          scene.scale,
-                      ]}
-                    >
-                      <boxGeometry
-                        args={[
-                          Math.max(0.05, (room.width - inset) / scene.scale),
-                          0.025,
-                          Math.max(0.05, (room.height - inset) / scene.scale),
+                {!!plan.slabs?.length && (
+                  <FloorSurfaces plan={plan} scene={scene} />
+                )}
+                {!plan.slabs?.length &&
+                  plan.rooms.map((room, roomIndex) => {
+                    const roomName = room.name.toLowerCase();
+                    const color = roomName.includes("garden")
+                      ? "#789164"
+                      : roomName.includes("garage")
+                        ? "#b48e72"
+                        : roomName.includes("bath")
+                          ? "#d8ddd8"
+                          : roomIndex % 2 === 0
+                            ? "#d8d5cb"
+                            : "#cecfc7";
+                    const inset = blueprint.review ? 0 : 18;
+                    return (
+                      <mesh
+                        key={`${floor}-${room.id}-finish`}
+                        receiveShadow
+                        position={[
+                          (room.x + room.width / 2 - scene.centerX) /
+                            scene.scale,
+                          0.012,
+                          (room.y + room.height / 2 - scene.centerY) /
+                            scene.scale,
                         ]}
-                      />
-                      <meshStandardMaterial color={color} roughness={0.88} />
-                    </mesh>
-                  );
-                })}
+                      >
+                        <boxGeometry
+                          args={[
+                            Math.max(0.05, (room.width - inset) / scene.scale),
+                            0.025,
+                            Math.max(0.05, (room.height - inset) / scene.scale),
+                          ]}
+                        />
+                        <meshStandardMaterial color={color} roughness={0.88} />
+                      </mesh>
+                    );
+                  })}
                 {levelScene.wallSegments.map((wall) => (
                   <mesh
                     key={`${floor}-${wall.id}`}
@@ -370,10 +385,27 @@ function Building({
                   </mesh>
                 ))}
                 {/* CAD furniture blocks stay linked to their source plan and active level. */}
-                {plan.fixtures?.map((item) => <mesh key={item.id} castShadow receiveShadow position={[(item.x-scene.centerX)/scene.scale,item.height/2,(item.y-scene.centerY)/scene.scale]}>
-                  <boxGeometry args={[item.width/scene.scale,item.height,item.depth/scene.scale]}/>
-                  <meshStandardMaterial color="#b8a78e" roughness={.8}/>
-                </mesh>)}
+                {plan.fixtures?.map((item) => (
+                  <mesh
+                    key={item.id}
+                    castShadow
+                    receiveShadow
+                    position={[
+                      (item.x - scene.centerX) / scene.scale,
+                      item.height / 2,
+                      (item.y - scene.centerY) / scene.scale,
+                    ]}
+                  >
+                    <boxGeometry
+                      args={[
+                        item.width / scene.scale,
+                        item.height,
+                        item.depth / scene.scale,
+                      ]}
+                    />
+                    <meshStandardMaterial color="#b8a78e" roughness={0.8} />
+                  </mesh>
+                ))}
                 {plan.columns.map((column) => (
                   <mesh
                     key={`${floor}-${column.id}`}
@@ -416,22 +448,32 @@ function Building({
                     />
                   );
                 })}
-                {plan.stairs?.map((stair) => stair.type === "straight" ? (
-                  <StraightStair key={`${floor}-${stair.id}`}
-                    x={(stair.x - scene.centerX) / scene.scale}
-                    z={(stair.y - scene.centerY) / scene.scale}
-                    width={stair.radius * 2 / scene.scale}
-                    length={(stair.length ?? stair.radius * 4) / scene.scale}
-                    rotation={-(stair.rotation ?? 0) * Math.PI / 180} />
-                ) : (
-                  <SpiralStair key={`${floor}-${stair.id}`}
-                    x={(stair.x - scene.centerX) / scene.scale}
-                    z={(stair.y - scene.centerY) / scene.scale}
-                    radius={stair.radius / scene.scale} />
-                ))}
+                {plan.stairs?.map((stair) =>
+                  stair.type === "straight" ? (
+                    <StraightStair
+                      key={`${floor}-${stair.id}`}
+                      x={(stair.x - scene.centerX) / scene.scale}
+                      z={(stair.y - scene.centerY) / scene.scale}
+                      width={(stair.radius * 2) / scene.scale}
+                      length={(stair.length ?? stair.radius * 4) / scene.scale}
+                      rotation={(-(stair.rotation ?? 0) * Math.PI) / 180}
+                    />
+                  ) : (
+                    <SpiralStair
+                      key={`${floor}-${stair.id}`}
+                      x={(stair.x - scene.centerX) / scene.scale}
+                      z={(stair.y - scene.centerY) / scene.scale}
+                      radius={stair.radius / scene.scale}
+                    />
+                  ),
+                )}
                 {plan.routes?.map((route) => {
-                  const from = plan.services?.find((point) => point.id === route.fromId);
-                  const to = plan.services?.find((point) => point.id === route.toId);
+                  const from = plan.services?.find(
+                    (point) => point.id === route.fromId,
+                  );
+                  const to = plan.services?.find(
+                    (point) => point.id === route.toId,
+                  );
                   if (!from || !to) return null;
                   const startY = from.kind === "drain" ? 0.1 : 1.15;
                   const endY = to.kind === "drain" ? 0.1 : 1.15;
@@ -441,45 +483,121 @@ function Building({
                   const toX = (to.x - scene.centerX) / scene.scale;
                   const toZ = (to.y - scene.centerY) / scene.scale;
                   // Straight schematic runs expose connectivity; no pipe routing or clash clearance is inferred.
-                  const curve = new CatmullRomCurve3([
-                    new Vector3(fromX, startY, fromZ),
-                    new Vector3(fromX, routeY, fromZ),
-                    new Vector3(toX, routeY, toZ),
-                    new Vector3(toX, endY, toZ),
-                  ], false, "centripetal");
-                  return <mesh key={route.id} name={route.kind === "plumbing" ? "Conexión sanitaria esquemática" : "Circuito eléctrico esquemático"}>
-                    <tubeGeometry args={[curve, 20, route.kind === "plumbing" ? 0.045 : 0.028, 8, false]} />
-                    <meshStandardMaterial color={route.kind === "plumbing" ? "#1885b5" : "#e5b546"} roughness={0.48} />
-                  </mesh>;
+                  const curve = new CatmullRomCurve3(
+                    [
+                      new Vector3(fromX, startY, fromZ),
+                      new Vector3(fromX, routeY, fromZ),
+                      new Vector3(toX, routeY, toZ),
+                      new Vector3(toX, endY, toZ),
+                    ],
+                    false,
+                    "centripetal",
+                  );
+                  return (
+                    <mesh
+                      key={route.id}
+                      name={
+                        route.kind === "plumbing"
+                          ? "Conexión sanitaria esquemática"
+                          : "Circuito eléctrico esquemático"
+                      }
+                    >
+                      <tubeGeometry
+                        args={[
+                          curve,
+                          20,
+                          route.kind === "plumbing" ? 0.045 : 0.028,
+                          8,
+                          false,
+                        ]}
+                      />
+                      <meshStandardMaterial
+                        color={
+                          route.kind === "plumbing" ? "#1885b5" : "#e5b546"
+                        }
+                        roughness={0.48}
+                      />
+                    </mesh>
+                  );
                 })}
                 {plan.services?.map((point) => (
-                  <group key={point.id} name={point.name}
-                    onPointerOver={(event) => { event.stopPropagation(); setHoveredService(point.id); }}
+                  <group
+                    key={point.id}
+                    name={point.name}
+                    onPointerOver={(event) => {
+                      event.stopPropagation();
+                      setHoveredService(point.id);
+                    }}
                     onPointerOut={() => setHoveredService(null)}
-                    position={[(point.x - scene.centerX) / scene.scale, point.kind === "drain" ? 0.1 : 1.15, (point.y - scene.centerY) / scene.scale]}>
+                    position={[
+                      (point.x - scene.centerX) / scene.scale,
+                      point.kind === "drain" ? 0.1 : 1.15,
+                      (point.y - scene.centerY) / scene.scale,
+                    ]}
+                  >
                     <mesh castShadow>
                       <boxGeometry args={[0.19, 0.19, 0.19]} />
-                      <meshStandardMaterial color={["water", "drain"].includes(point.kind) ? "#1885b5" : "#e5b546"} roughness={0.45} />
+                      <meshStandardMaterial
+                        color={
+                          ["water", "drain"].includes(point.kind)
+                            ? "#1885b5"
+                            : "#e5b546"
+                        }
+                        roughness={0.45}
+                      />
                     </mesh>
-                    {hoveredService === point.id && <Html center distanceFactor={12} position={[0, 0.34, 0]}>
-                      <span style={{ whiteSpace: "nowrap", background: "#15242e", color: "white", borderRadius: 6, padding: "4px 8px", fontSize: 12, pointerEvents: "none" }}>{point.name}</span>
-                    </Html>}
+                    {hoveredService === point.id && (
+                      <Html center distanceFactor={12} position={[0, 0.34, 0]}>
+                        <span
+                          style={{
+                            whiteSpace: "nowrap",
+                            background: "#15242e",
+                            color: "white",
+                            borderRadius: 6,
+                            padding: "4px 8px",
+                            fontSize: 12,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {point.name}
+                        </span>
+                      </Html>
+                    )}
                   </group>
                 ))}
-                {showRoof && plan.roofs?.map((roof) => (
-                  <mesh key={roof.id} name={roof.name} castShadow receiveShadow position={[
-                    (roof.x + roof.width / 2 - scene.centerX) / scene.scale,
-                    roof.elevation + roof.thickness / 2,
-                    (roof.y + roof.depth / 2 - scene.centerY) / scene.scale,
-                  ]}>
-                    <boxGeometry args={[roof.width / scene.scale, roof.thickness, roof.depth / scene.scale]} />
-                    <meshStandardMaterial color="#777d75" roughness={0.88} />
-                  </mesh>
-                ))}
+                {showRoof &&
+                  plan.roofs?.map((roof) => (
+                    <mesh
+                      key={roof.id}
+                      name={roof.name}
+                      castShadow
+                      receiveShadow
+                      position={[
+                        (roof.x + roof.width / 2 - scene.centerX) / scene.scale,
+                        roof.elevation + roof.thickness / 2,
+                        (roof.y + roof.depth / 2 - scene.centerY) / scene.scale,
+                      ]}
+                    >
+                      <boxGeometry
+                        args={[
+                          roof.width / scene.scale,
+                          roof.thickness,
+                          roof.depth / scene.scale,
+                        ]}
+                      />
+                      <meshStandardMaterial color="#777d75" roughness={0.88} />
+                    </mesh>
+                  ))}
               </>
             ) : (
-              (plan.walls.length + plan.columns.length > 0 &&
-                <StructuralLevel scene={levelScene} points={points} floor={floor} zoneColor={zoneColor} />)
+              plan.walls.length + plan.columns.length > 0 && (
+                <StructuralLevel
+                  scene={levelScene}
+                  points={points}
+                  floor={floor}
+                  zoneColor={zoneColor}
+                />
+              )
             )}
           </group>
         );
@@ -603,20 +721,42 @@ function SpiralStair({
 }
 
 /** A schematic straight flight uses its saved width, run and orientation in both views. */
-function StraightStair({ x, z, width, length, rotation }: {
-  x: number; z: number; width: number; length: number; rotation: number;
+function StraightStair({
+  x,
+  z,
+  width,
+  length,
+  rotation,
+}: {
+  x: number;
+  z: number;
+  width: number;
+  length: number;
+  rotation: number;
 }) {
   const steps = 12;
-  return <group position={[x, 0, z]} rotation-y={rotation} name="Escalera recta">
-    {Array.from({ length: steps }).map((_, index) => {
-      const tread = length / steps;
-      return <mesh key={index} castShadow receiveShadow
-        position={[0, (index + 1) * 2.7 / steps, -length / 2 + (index + 0.5) * tread]}>
-        <boxGeometry args={[width, 0.1, tread]} />
-        <meshStandardMaterial color="#a89b88" roughness={0.72} />
-      </mesh>;
-    })}
-  </group>;
+  return (
+    <group position={[x, 0, z]} rotation-y={rotation} name="Escalera recta">
+      {Array.from({ length: steps }).map((_, index) => {
+        const tread = length / steps;
+        return (
+          <mesh
+            key={index}
+            castShadow
+            receiveShadow
+            position={[
+              0,
+              ((index + 1) * 2.7) / steps,
+              -length / 2 + (index + 0.5) * tread,
+            ]}
+          >
+            <boxGeometry args={[width, 0.1, tread]} />
+            <meshStandardMaterial color="#a89b88" roughness={0.72} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
 }
 
 function DoorLeaf({
@@ -633,10 +773,13 @@ function DoorLeaf({
   onToggle: () => void;
 }) {
   const group = useRef<Group>(null);
-  const invalidate = useThree(s => s.invalidate);
+  const invalidate = useThree((s) => s.invalidate);
   const [hovered, setHovered] = useState(false);
   useFrame(() => {
-    if (group.current && Math.abs(group.current.rotation.y - (open ? -Math.PI / 2 : -0.06)) > .001) {
+    if (
+      group.current &&
+      Math.abs(group.current.rotation.y - (open ? -Math.PI / 2 : -0.06)) > 0.001
+    ) {
       group.current.rotation.y = MathUtils.lerp(
         group.current.rotation.y,
         open ? -Math.PI / 2 : -0.06,
@@ -786,14 +929,19 @@ export function BuildingScene(props: BuildingSceneProps) {
   ];
   const shadows = settings.shadows && quality !== "low";
   const shadowSize = quality === "high" ? 2048 : 1024;
-  const cadModel = !!props.blueprint.cad && props.blueprint.reconstruction?.version === 2;
-  const animate = !!props.simulation?.active || props.cameraPreset === "Walkthrough";
+  const cadModel =
+    !!props.blueprint.cad &&
+    (props.blueprint.reconstruction?.version ?? 0) >= 2;
+  const animate =
+    !!props.simulation?.active || props.cameraPreset === "Walkthrough";
   const hasGeometry =
     props.blueprint.walls.length +
       props.blueprint.rooms.length +
       props.blueprint.columns.length >
-      0 || (props.blueprint.roofs?.length ?? 0) + (props.blueprint.services?.length ?? 0) >
-    0;
+      0 ||
+    (props.blueprint.roofs?.length ?? 0) +
+      (props.blueprint.services?.length ?? 0) >
+      0;
   const background = structural
     ? "#050b17"
     : night
@@ -805,12 +953,26 @@ export function BuildingScene(props: BuildingSceneProps) {
     <Canvas
       shadows={shadows}
       frameloop={animate ? "always" : "demand"}
-      performance={{ min: .7, debounce: 250 }}
-      dpr={quality === "low" ? 1 : [1, quality === "high" ? 2 : cadModel ? 1.25 : 1.5]}
+      performance={{ min: 0.7, debounce: 250 }}
+      dpr={
+        quality === "low"
+          ? 1
+          : [1, quality === "high" ? 2 : cadModel ? 1.25 : 1.5]
+      }
       gl={{ antialias: quality !== "low", toneMapping: ACESFilmicToneMapping }}
     >
       <AdaptiveDpr />
-      <ShadowCache animate={animate} revision={[props.blueprint, props.material, props.isolatedLevel, settings.sunAzimuth, settings.sunElevation, shadows]} />
+      <ShadowCache
+        animate={animate}
+        revision={[
+          props.blueprint,
+          props.material,
+          props.isolatedLevel,
+          settings.sunAzimuth,
+          settings.sunElevation,
+          shadows,
+        ]}
+      />
       <Exposure value={settings.exposure} />
       <color attach="background" args={[background]} />
       <fog
@@ -888,19 +1050,34 @@ export function BuildingScene(props: BuildingSceneProps) {
           color="#ffbe78"
         />
       )}
-      {props.siteSelection && !(props.blueprint.levels.some((level) => level.elevation < 0) && props.isolatedLevel === "All") &&
-        <LotTerrain selection={props.siteSelection} />}
-      {hasGeometry && cadModel ? <CadBuilding blueprint={props.blueprint} finish={materialMap[props.material]} isolatedLevel={props.isolatedLevel ?? "All"} interactive={props.cameraPreset === "Walkthrough"} structural={structural} simulation={props.simulation} showRoof={props.showRoof} /> : hasGeometry && (
-        <Building
+      {props.siteSelection &&
+        !(
+          props.blueprint.levels.some((level) => level.elevation < 0) &&
+          props.isolatedLevel === "All"
+        ) && <LotTerrain selection={props.siteSelection} />}
+      {hasGeometry && cadModel ? (
+        <CadBuilding
           blueprint={props.blueprint}
-          floors={props.floors}
-          material={props.material}
-          modelViewMode={modelViewMode}
-          showRoof={props.showRoof}
-          simulation={props.simulation}
-          isolatedLevel={props.isolatedLevel}
+          finish={materialMap[props.material]}
+          isolatedLevel={props.isolatedLevel ?? "All"}
           interactive={props.cameraPreset === "Walkthrough"}
+          structural={structural}
+          simulation={props.simulation}
+          showRoof={props.showRoof}
         />
+      ) : (
+        hasGeometry && (
+          <Building
+            blueprint={props.blueprint}
+            floors={props.floors}
+            material={props.material}
+            modelViewMode={modelViewMode}
+            showRoof={props.showRoof}
+            simulation={props.simulation}
+            isolatedLevel={props.isolatedLevel}
+            interactive={props.cameraPreset === "Walkthrough"}
+          />
+        )
       )}
       <Grid
         infiniteGrid
@@ -912,10 +1089,16 @@ export function BuildingScene(props: BuildingSceneProps) {
         sectionColor={structural ? "#20547b" : night ? "#53636a" : "#828e84"}
         position={[0, baseElevation - 0.22, 0]}
       />
-      {cadModel && <mesh receiveShadow rotation-x={-Math.PI / 2} position-y={baseElevation - .24}>
-        <planeGeometry args={[extent * 8, extent * 8]} />
-        <shadowMaterial transparent opacity={.18} />
-      </mesh>}
+      {cadModel && (
+        <mesh
+          receiveShadow
+          rotation-x={-Math.PI / 2}
+          position-y={baseElevation - 0.24}
+        >
+          <planeGeometry args={[extent * 8, extent * 8]} />
+          <shadowMaterial transparent opacity={0.18} />
+        </mesh>
+      )}
       {shadows && !cadModel && (
         <ContactShadows
           key={`${props.isolatedLevel}-${props.material}-${props.showRoof}-${props.lighting}`}
@@ -931,21 +1114,53 @@ export function BuildingScene(props: BuildingSceneProps) {
       {props.cameraPreset === "Walkthrough" ? (
         <WalkthroughController width={scene.width} depth={scene.depth} />
       ) : (
-        <SmoothOrbitControls extent={extent} targetY={baseElevation + height * .4} />
+        <SmoothOrbitControls
+          extent={extent}
+          targetY={baseElevation + height * 0.4}
+        />
       )}
     </Canvas>
   );
 }
 
 /** Camera motion invalidates demand frames; lowering DPR during a gesture keeps orbit responsive. */
-function SmoothOrbitControls({ extent, targetY }: { extent: number; targetY: number }) {
-  const performance = useThree(s => s.performance);
-  const target = useMemo<[number, number, number]>(() => [0, targetY, 0], [targetY]);
-  return <OrbitControls makeDefault enableDamping dampingFactor={.12} rotateSpeed={.65} zoomSpeed={.8} panSpeed={.8} minDistance={.8} maxDistance={Math.max(48, extent * 5)} maxPolarAngle={Math.PI / 2.01} target={target} onStart={() => performance.regress()} />;
+function SmoothOrbitControls({
+  extent,
+  targetY,
+}: {
+  extent: number;
+  targetY: number;
+}) {
+  const performance = useThree((s) => s.performance);
+  const target = useMemo<[number, number, number]>(
+    () => [0, targetY, 0],
+    [targetY],
+  );
+  return (
+    <OrbitControls
+      makeDefault
+      enableDamping
+      dampingFactor={0.12}
+      rotateSpeed={0.65}
+      zoomSpeed={0.8}
+      panSpeed={0.8}
+      minDistance={0.8}
+      maxDistance={Math.max(48, extent * 5)}
+      maxPolarAngle={Math.PI / 2.01}
+      target={target}
+      onStart={() => performance.regress()}
+    />
+  );
 }
 
 /** Sun shadows depend on geometry and lighting, not on the orbit camera. Reuse them while inspecting. */
-function ShadowCache({ animate, revision }: { animate: boolean; revision: unknown[] }) {
+function ShadowCache({
+  animate,
+  revision,
+}: {
+  animate: boolean;
+  revision: unknown[];
+}) {
   const { gl, invalidate } = useThree();
   useEffect(() => {
     // Three's imperative renderer owns this cache; React state is not being mutated.
