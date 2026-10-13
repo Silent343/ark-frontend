@@ -94,6 +94,13 @@ export function extractCadDrawing(
     layers.set(layer, currentLayer);
 
     if (entity instanceof cad.Insert) {
+      if (
+        entity.block?.blockEntity?.xRefPath &&
+        entity.block.entities.count === 0
+      ) {
+        skipped.ExternalReference = (skipped.ExternalReference ?? 0) + 1;
+        return;
+      }
       try {
         const instance = `block-${entity.handle}-${blockIndex++}`;
         for (const child of entity.explode())

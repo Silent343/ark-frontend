@@ -257,6 +257,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
 
         <aside className="model-control-rail space-y-5">
           <ModelInspector
+            sourcePlan={reconstruction.rawBlueprint}
             plan={data.blueprint}
             selectedId={selectedElementId}
             onSelect={(id) => {

@@ -215,7 +215,7 @@ assert(
     walls: [{ ...integrityPlan.walls[0], end: [0, 0] }],
   }).some((i) => i.code === "invalid-wall"),
 );
-assert.equal(model.reconstruction.version, 4);
+assert.equal(model.reconstruction.version, 6);
 assert(
   validModelEvidence(model),
   "Compiled source references must be resolvable",

@@ -33,7 +33,7 @@ import {
 } from "../../infrastructure/browser-plan-source";
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 
-interface SourceDocument {
+export interface SourceDocument {
   id: string;
   title: string;
   file_data: string;
@@ -74,12 +74,14 @@ export function PlanImportDialog({
   initialLevelId,
   onSave,
   onClose,
+  referenceOnly = false,
 }: {
   blueprint: Blueprint;
   documents: SourceDocument[];
   initialLevelId?: string;
   onSave: (next: Blueprint) => Promise<void>;
   onClose: () => void;
+  referenceOnly?: boolean;
 }) {
   const { t, locale } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null),
@@ -89,7 +91,9 @@ export function PlanImportDialog({
   const [file, setFile] = useState<File | null>(null),
     [page, setPage] = useState(1);
   const [discipline, setDiscipline] = useState<PlanDiscipline>("architecture");
-  const [viewType, setViewType] = useState<"plan" | "reference">("plan");
+  const [viewType, setViewType] = useState<
+    "plan" | "section" | "elevation" | "schedule" | "detail"
+  >(referenceOnly ? "section" : "plan");
   const [levelId, setLevelId] = useState(
     initialLevelId ??
       blueprint.levels.find((item) => item.elevation === 0)?.id ??
@@ -161,7 +165,7 @@ export function PlanImportDialog({
     next: File,
     nextPage: number,
     documentDiscipline?: string,
-    nextView: "plan" | "reference" = "plan",
+    nextView: typeof viewType = referenceOnly ? "section" : "plan",
   ) {
     const run = ++generation.current;
     controller.current?.abort();
@@ -171,6 +175,12 @@ export function PlanImportDialog({
     resetAnalysis();
     try {
       const raster = await loadPlanSource(next, nextPage, operation.signal);
+      if (referenceOnly && raster.cad) {
+        raster.cad.dispose();
+        throw new Error(
+          "Añade esta referencia como PDF o imagen. Para el CAD actual, delimita una región de corte o cuadro.",
+        );
+      }
       if (run !== generation.current) {
         raster.cad?.dispose();
         return;
@@ -236,9 +246,17 @@ export function PlanImportDialog({
         new File([bytes], document.file_name, { type: document.mime_type }),
         1,
         document.discipline,
-        /^Vista: (Corte|Elevación|Cuadro|Referencia)/.test(document.notes ?? "")
-          ? "reference"
-          : "plan",
+        /^Vista: Corte/.test(document.notes ?? "")
+          ? "section"
+          : /^Vista: Elevación/.test(document.notes ?? "")
+            ? "elevation"
+            : /^Vista: Cuadro/.test(document.notes ?? "")
+              ? "schedule"
+              : /^Vista: Referencia/.test(document.notes ?? "")
+                ? "detail"
+                : referenceOnly
+                  ? "section"
+                  : "plan",
       );
     } catch {
       setError(t("import.invalidFile"));
@@ -554,6 +572,77 @@ export function PlanImportDialog({
       setBusy(false);
     }
   }
+  async function saveReference() {
+    if (
+      !file ||
+      !prepared ||
+      !preview ||
+      viewType === "plan" ||
+      source?.cad ||
+      !levelId
+    )
+      return;
+    if ((blueprint.sheets?.length ?? 0) >= 24) {
+      setError("Se admiten hasta 24 láminas por proyecto.");
+      return;
+    }
+    const run = generation.current;
+    const operation = new AbortController();
+    controller.current = operation;
+    setBusy(true);
+    setError("");
+    setProgress(0);
+    const timeout = window.setTimeout(() => operation.abort(), 120_000);
+    try {
+      const text = ocr
+        ? await recognizePlanText(
+            prepared,
+            locale === "en" ? "eng" : locale === "pt" ? "por" : "spa",
+            setProgress,
+            operation.signal,
+          )
+        : rotation === 0
+          ? (source?.text ?? [])
+          : [];
+      if (operation.signal.aborted || generation.current !== run) return;
+      const sheet = {
+        id: crypto.randomUUID(),
+        name: `${file.name} · página ${page}`,
+        discipline,
+        viewType,
+        levelId,
+        sourceName: file.name,
+        page,
+        image: preview,
+        x: 0,
+        y: 0,
+        width: prepared.width,
+        height: prepared.height,
+        // Reference pages have no model scale; this field only sizes their document preview.
+        metersPerUnit: 1,
+        evidence: {
+          method: "manual-tracing" as const,
+          warnings: ["reference-not-calibrated"],
+          text,
+        },
+      };
+      await onSave({
+        ...blueprint,
+        width: Math.max(blueprint.width, sheet.width),
+        height: Math.max(blueprint.height, sheet.height),
+        sheets: [...(blueprint.sheets ?? []), sheet],
+      });
+      onClose();
+    } catch (e) {
+      if (generation.current === run)
+        setError(
+          e instanceof Error ? e.message : "No se pudo guardar la referencia.",
+        );
+    } finally {
+      window.clearTimeout(timeout);
+      if (generation.current === run) setBusy(false);
+    }
+  }
   return (
     <dialog
       ref={dialog}
@@ -567,12 +656,23 @@ export function PlanImportDialog({
       <header>
         <div>
           <p className="pm-eyebrow">{t("import.eyebrow")}</p>
-          <h2 id="plan-import-title">{t("import.title")}</h2>
+          <h2 id="plan-import-title">
+            {referenceOnly ? "Añadir lámina de referencia" : t("import.title")}
+          </h2>
           <p>{t("import.private")}</p>
           <p className="plan-import-help">
-            Una imagen necesita una medida real: marca los extremos de una cota
-            y escribe su distancia en metros. Después analiza y revisa la
-            propuesta. Subir el archivo no basta para crear el 3D.
+            {viewType === "plan" ? (
+              <>
+                Una imagen necesita una medida real: marca los extremos de una
+                cota y escribe su distancia en metros. Después analiza y revisa
+                la propuesta. Subir el archivo no basta para crear el 3D.
+              </>
+            ) : (
+              <>
+                Añade una lámina de referencia para leer y vincular sus cotas.
+                Los cortes y cuadros se conservan como evidencia documental.
+              </>
+            )}
           </p>
         </div>
         <button
@@ -590,11 +690,21 @@ export function PlanImportDialog({
             <legend>1 · {t("import.source")}</legend>
             <label className="plan-upload">
               <Upload size={18} />
-              {t("import.choose")}
+              {referenceOnly
+                ? "Elegir PDF o imagen de referencia"
+                : t("import.choose")}
               <input
-                aria-label={t("import.choose")}
+                aria-label={
+                  referenceOnly
+                    ? "Elegir PDF o imagen de referencia"
+                    : t("import.choose")
+                }
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,application/pdf,image/png,image/jpeg,image/webp"
+                accept={
+                  referenceOnly
+                    ? ".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+                    : ".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,application/pdf,image/png,image/jpeg,image/webp"
+                }
                 onChange={(event) => {
                   const selected = event.target.files?.[0];
                   if (selected) void load(selected, 1);
@@ -752,22 +862,25 @@ export function PlanImportDialog({
                 <select
                   value={viewType}
                   onChange={(e) => {
-                    setViewType(e.target.value as "plan" | "reference");
+                    setViewType(e.target.value as typeof viewType);
                     setDraft(null);
                   }}
                 >
-                  <option value="plan">Planta · vista desde arriba</option>
-                  <option value="reference">
-                    Corte, elevación o detalle · referencia
-                  </option>
+                  {!referenceOnly && (
+                    <option value="plan">Planta · vista desde arriba</option>
+                  )}
+                  <option value="section">Corte</option>
+                  <option value="elevation">Elevación</option>
+                  <option value="schedule">Cuadro de elementos</option>
+                  <option value="detail">Detalle / referencia</option>
                 </select>
               </label>
             )}
-            {viewType === "reference" && (
+            {viewType !== "plan" && (
               <p className="plan-import-help">
-                Esta vista se conserva como documento de referencia. No se
-                extruye como una planta. Úsala para confirmar alturas o medidas;
-                selecciona una planta para generar geometría.
+                Guarda esta vista para vincular sus cotas a elementos de la
+                planta. No necesita calibración para conservarla como
+                referencia.
               </p>
             )}
             <p className="plan-import-help">{t("import.multiSheetHint")}</p>
@@ -899,7 +1012,7 @@ export function PlanImportDialog({
               )}
             </fieldset>
           )}
-          {source && !perspective && (
+          {source && !perspective && viewType === "plan" && (
             <fieldset disabled={busy || !!draft}>
               <legend>3 · {t("import.calibrate")}</legend>
               <p>{t("import.twoPoints")}</p>
@@ -1033,13 +1146,15 @@ export function PlanImportDialog({
         </aside>
         <main>
           <p className="plan-import-help">
-            {t(
-              draft
-                ? "import.reviewHint"
-                : perspective
-                  ? "import.fourPoints"
-                  : "import.twoPoints",
-            )}
+            {viewType !== "plan"
+              ? "Vista de referencia · verifica que las cotas y los textos sean legibles."
+              : t(
+                  draft
+                    ? "import.reviewHint"
+                    : perspective
+                      ? "import.fourPoints"
+                      : "import.twoPoints",
+                )}
           </p>
           {source?.cad && (
             <div className="plan-cad-zoom" aria-label={t("import.cadZoom")}>
@@ -1082,7 +1197,8 @@ export function PlanImportDialog({
                 role="img"
                 aria-label={t("import.preview")}
                 onClick={(event) => {
-                  if (busy || draft) return;
+                  if (busy || draft || (viewType !== "plan" && !perspective))
+                    return;
                   const matrix = event.currentTarget.getScreenCTM();
                   if (!matrix) return;
                   const point = new DOMPoint(
@@ -1185,6 +1301,36 @@ export function PlanImportDialog({
             <p role="alert" className="pm-alert pm-danger">
               {error}
             </p>
+          )}
+          {source && !source.cad && viewType !== "plan" && (
+            <section className="plan-import-result">
+              <h3>Conservar referencia</h3>
+              <p>
+                El texto del PDF se conserva. Para una foto o un PDF escaneado,
+                activa la lectura OCR.
+              </p>
+              <label className="plan-check">
+                <input
+                  type="checkbox"
+                  checked={ocr}
+                  onChange={(e) => setOcr(e.target.checked)}
+                />
+                Leer cotas y cuadros con OCR
+              </label>
+              {busy && (
+                <p role="status">
+                  Leyendo referencia… {Math.round(progress * 100)}%
+                </p>
+              )}
+              <button
+                type="button"
+                className="pm-button pm-primary"
+                disabled={busy || !prepared}
+                onClick={() => void saveReference()}
+              >
+                Guardar referencia
+              </button>
+            </section>
           )}
           {draft && (
             <section className="plan-import-result">

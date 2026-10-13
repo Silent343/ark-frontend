@@ -38,7 +38,11 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { Blueprint, ServiceKind, Wall } from "@/bounded-contexts/plan-digitization/domain/entities/blueprint";
+import type {
+  Blueprint,
+  ServiceKind,
+  Wall,
+} from "@/bounded-contexts/plan-digitization/domain/entities/blueprint";
 import type {
   EditorTool,
   ResizeHandle,
@@ -60,6 +64,7 @@ import {
 import { PlanImportDialog } from "../components/plan-import-dialog";
 import { CadEditor } from "../components/cad-editor";
 import { PlanSourceReviewPanel } from "../components/plan-source-review-panel";
+import { DrawingCorrespondencePanel } from "../components/drawing-correspondence-panel";
 import { metersPerUnit } from "../../domain/plan-calibration";
 import { sourceSheetForElement } from "../../domain/plan-provenance";
 import { geometryOnLevel } from "../../domain/plan-levels";
@@ -93,7 +98,12 @@ const tools: {
   { id: "window", key: "editor.window", label: "Ventana", icon: Columns3 },
   { id: "column", key: "editor.column", label: "Columna", icon: Plus },
   { id: "roof", key: "editor.roof", label: "Cubierta", icon: PanelsTopLeft },
-  { id: "service", key: "editor.service", label: "Instalación", icon: CircuitBoard },
+  {
+    id: "service",
+    key: "editor.service",
+    label: "Instalación",
+    icon: CircuitBoard,
+  },
   { id: "delete", key: "editor.delete", label: "Eliminar", icon: Trash2 },
 ];
 
@@ -238,16 +248,20 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     const frame = window.requestAnimationFrame(() => {
       const viewport = viewportRef.current;
       if (!viewport) return;
-      const plan = editedBlueprint?.projectId === data.blueprint.projectId
-        ? editedBlueprint : data.blueprint;
+      const plan =
+        editedBlueprint?.projectId === data.blueprint.projectId
+          ? editedBlueprint
+          : data.blueprint;
       const sourceKey = `${plan.projectId}:${plan.sheets?.length ?? 0}`;
       if (lastFittedSource.current === sourceKey) return;
       lastFittedSource.current = sourceKey;
-      const fitted = Math.floor(Math.min(
-        (viewport.clientWidth - 48) / plan.width,
-        (viewport.clientHeight - 48) / plan.height,
-        1,
-      ) * 100);
+      const fitted = Math.floor(
+        Math.min(
+          (viewport.clientWidth - 48) / plan.width,
+          (viewport.clientHeight - 48) / plan.height,
+          1,
+        ) * 100,
+      );
       setZoom(Math.max(50, Math.min(100, fitted)));
       viewport.scrollTo(0, 0);
     });
@@ -280,16 +294,40 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     editedBlueprint?.projectId === data.blueprint.projectId
       ? editedBlueprint
       : data.blueprint;
-  if (blueprint.cad) return <CadEditor blueprint={blueprint} projectName={data.project.name} floorHeight={data.project.floorHeight} editMode={editMode} members={managementData?.coordination.members ?? []} />;
+  if (blueprint.cad)
+    return (
+      <CadEditor
+        blueprint={blueprint}
+        projectName={data.project.name}
+        floorHeight={data.project.floorHeight}
+        editMode={editMode}
+        members={managementData?.coordination.members ?? []}
+        documents={managementData?.documents ?? []}
+      />
+    );
   const levelId = blueprint.levels.some((item) => item.id === activeLevelId)
-    ? activeLevelId : (blueprint.levels.find((item) => item.elevation === 0)?.id ?? blueprint.levels[0].id);
-  const currentSheet = blueprint.sheets?.find((item) => item.id === activeSheetId && item.levelId === levelId)
-    ?? blueprint.sheets?.find((item) => item.levelId === levelId);
+    ? activeLevelId
+    : (blueprint.levels.find((item) => item.elevation === 0)?.id ??
+      blueprint.levels[0].id);
+  const currentSheet =
+    blueprint.sheets?.find(
+      (item) => item.id === activeSheetId && item.levelId === levelId,
+    ) ?? blueprint.sheets?.find((item) => item.levelId === levelId);
   const visibleBlueprint: Blueprint = {
     ...geometryOnLevel(blueprint, levelId),
-    sourceImage: currentSheet?.image ?? (levelId === (blueprint.levels.find((item) => item.elevation === 0)?.id ?? blueprint.levels[0].id) ? blueprint.sourceImage : undefined),
-    sourceSize: currentSheet ? { width: currentSheet.width, height: currentSheet.height } : blueprint.sourceSize,
-    sourceOffset: currentSheet ? { x: currentSheet.x, y: currentSheet.y } : undefined,
+    sourceImage:
+      currentSheet?.image ??
+      (levelId ===
+      (blueprint.levels.find((item) => item.elevation === 0)?.id ??
+        blueprint.levels[0].id)
+        ? blueprint.sourceImage
+        : undefined),
+    sourceSize: currentSheet
+      ? { width: currentSheet.width, height: currentSheet.height }
+      : blueprint.sourceSize,
+    sourceOffset: currentSheet
+      ? { x: currentSheet.x, y: currentSheet.y }
+      : undefined,
   };
   const addLevel = (basement: boolean) => {
     const elevations = blueprint.levels.map((item) => item.elevation);
@@ -301,7 +339,12 @@ function ProjectEditor({ projectId }: { projectId: string }) {
       : `Piso ${blueprint.levels.filter((item) => item.elevation >= 0).length + 1}`;
     const id = `level-${crypto.randomUUID()}`;
     remember();
-    persist({ ...blueprint, levels: [...blueprint.levels, { id, name, elevation }].sort((a, b) => a.elevation - b.elevation) });
+    persist({
+      ...blueprint,
+      levels: [...blueprint.levels, { id, name, elevation }].sort(
+        (a, b) => a.elevation - b.elevation,
+      ),
+    });
     setActiveLevelId(id);
     setActiveSheetId("");
     setSelectedId(null);
@@ -348,7 +391,10 @@ function ProjectEditor({ projectId }: { projectId: string }) {
                   aspectRatio: `${blueprint.width}/${blueprint.height}`,
                 }}
               >
-                <BlueprintCanvas blueprint={visibleBlueprint} overlayOpacity={0.12} />
+                <BlueprintCanvas
+                  blueprint={visibleBlueprint}
+                  overlayOpacity={0.12}
+                />
               </div>
               <Link
                 href={`/projects/${projectId}/editor?mode=edit`}
@@ -452,7 +498,9 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     try {
       validateSharedBlueprint(next as unknown as Record<string, unknown>);
       const oldIssues = new Set(planTopologyIssues(current));
-      const newIssue = planTopologyIssues(next).find((issue) => !oldIssues.has(issue));
+      const newIssue = planTopologyIssues(next).find(
+        (issue) => !oldIssues.has(issue),
+      );
       if (newIssue) throw new Error(`Revisa el plano: ${newIssue}`);
     } catch (reason) {
       setActionMessage((reason as Error).message);
@@ -494,8 +542,20 @@ function ProjectEditor({ projectId }: { projectId: string }) {
             levelId,
             sheetId: currentSheet?.id,
             name: t("editor.newRoomName", "Nuevo ambiente"),
-            x: Math.max(0, Math.min(blueprint.width - Math.min(3 / unit, blueprint.width), x - 1.5 / unit)),
-            y: Math.max(0, Math.min(blueprint.height - Math.min(2.4 / unit, blueprint.height), y - 1.2 / unit)),
+            x: Math.max(
+              0,
+              Math.min(
+                blueprint.width - Math.min(3 / unit, blueprint.width),
+                x - 1.5 / unit,
+              ),
+            ),
+            y: Math.max(
+              0,
+              Math.min(
+                blueprint.height - Math.min(2.4 / unit, blueprint.height),
+                y - 1.2 / unit,
+              ),
+            ),
             width: Math.min(3 / unit, blueprint.width),
             height: Math.min(2.4 / unit, blueprint.height),
             area: 7.2,
@@ -521,7 +581,10 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     if (tool === "column")
       next = {
         ...blueprint,
-        columns: [...blueprint.columns, { id, levelId, sheetId: currentSheet?.id, x, y, size: 0.3 / unit }],
+        columns: [
+          ...blueprint.columns,
+          { id, levelId, sheetId: currentSheet?.id, x, y, size: 0.3 / unit },
+        ],
       };
     if (tool === "door" || tool === "window") {
       const closest = nearestWall(visibleBlueprint.walls, x, y);
@@ -550,20 +613,58 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     if (tool === "roof") {
       const width = Math.min(3 / unit, blueprint.width);
       const depth = Math.min(2.4 / unit, blueprint.height);
-      next = { ...blueprint, roofs: [...(blueprint.roofs ?? []), {
-        id, levelId, sheetId: currentSheet?.id, name: "Cubierta parcial",
-        x: Math.max(0, Math.min(blueprint.width - width, x - width / 2)),
-        y: Math.max(0, Math.min(blueprint.height - depth, y - depth / 2)),
-        width, depth, thickness: 0.18,
-        elevation: Math.max(2.4, ...visibleBlueprint.walls.map((wall) => wall.height)),
-      }] };
+      next = {
+        ...blueprint,
+        roofs: [
+          ...(blueprint.roofs ?? []),
+          {
+            id,
+            levelId,
+            sheetId: currentSheet?.id,
+            name: "Cubierta parcial",
+            x: Math.max(0, Math.min(blueprint.width - width, x - width / 2)),
+            y: Math.max(0, Math.min(blueprint.height - depth, y - depth / 2)),
+            width,
+            depth,
+            thickness: 0.18,
+            elevation: Math.max(
+              2.4,
+              ...visibleBlueprint.walls.map((wall) => wall.height),
+            ),
+          },
+        ],
+      };
     }
     if (tool === "service") {
-      const labels: Record<ServiceKind, string> = { outlet: "Tomacorriente", switch: "Interruptor", light: "Luminaria", panel: "Tablero", water: "Punto de agua", drain: "Desagüe" };
-      next = { ...blueprint, services: [...(blueprint.services ?? []), {
-        id, levelId, kind: serviceKind, name: labels[serviceKind], x, y,
-        sheetId: currentSheet && (["water", "drain"].includes(serviceKind) ? currentSheet.discipline === "plumbing" : currentSheet.discipline === "electrical") ? currentSheet.id : undefined,
-      }] };
+      const labels: Record<ServiceKind, string> = {
+        outlet: "Tomacorriente",
+        switch: "Interruptor",
+        light: "Luminaria",
+        panel: "Tablero",
+        water: "Punto de agua",
+        drain: "Desagüe",
+      };
+      next = {
+        ...blueprint,
+        services: [
+          ...(blueprint.services ?? []),
+          {
+            id,
+            levelId,
+            kind: serviceKind,
+            name: labels[serviceKind],
+            x,
+            y,
+            sheetId:
+              currentSheet &&
+              (["water", "drain"].includes(serviceKind)
+                ? currentSheet.discipline === "plumbing"
+                : currentSheet.discipline === "electrical")
+                ? currentSheet.id
+                : undefined,
+          },
+        ],
+      };
     }
     persist(next);
     setSelectedId(id);
@@ -614,7 +715,9 @@ function ProjectEditor({ projectId }: { projectId: string }) {
       stairs: blueprint.stairs?.filter((item) => item.id !== id),
       roofs: blueprint.roofs?.filter((item) => item.id !== id),
       services: blueprint.services?.filter((item) => item.id !== id),
-      routes: blueprint.routes?.filter((route) => route.fromId !== id && route.toId !== id),
+      routes: blueprint.routes?.filter(
+        (route) => route.fromId !== id && route.toId !== id,
+      ),
     });
     setSelectedId(null);
     setPendingDeleteId(null);
@@ -638,7 +741,12 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     setSelectedId(null);
     setActionMessage(t("editor.undoMessage", "Última corrección deshecha."));
   };
-  const moveElement = (id: string, deltaX: number, deltaY: number, transient = false) => {
+  const moveElement = (
+    id: string,
+    deltaX: number,
+    deltaY: number,
+    transient = false,
+  ) => {
     const current = editedBlueprintRef.current ?? blueprint;
     const movePoint = <T extends { id: string; x: number; y: number }>(
       item: T,
@@ -646,37 +754,40 @@ function ProjectEditor({ projectId }: { projectId: string }) {
       item.id === id
         ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
         : item;
-    persist({
-      ...current,
-      rooms: current.rooms.map((item) =>
-        item.id === id
-          ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
-          : item,
-      ),
-      walls: current.walls.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              start: [item.start[0] + deltaX, item.start[1] + deltaY],
-              end: [item.end[0] + deltaX, item.end[1] + deltaY],
-            }
-          : item,
-      ),
-      doors: current.doors.map((item) =>
-        item.id === id || item.wallId === id
-          ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
-          : item,
-      ),
-      windows: current.windows.map((item) =>
-        item.id === id || item.wallId === id
-          ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
-          : item,
-      ),
-      columns: current.columns.map(movePoint),
-      stairs: current.stairs?.map(movePoint),
-      roofs: current.roofs?.map(movePoint),
-      services: current.services?.map(movePoint),
-    }, transient);
+    persist(
+      {
+        ...current,
+        rooms: current.rooms.map((item) =>
+          item.id === id
+            ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
+            : item,
+        ),
+        walls: current.walls.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                start: [item.start[0] + deltaX, item.start[1] + deltaY],
+                end: [item.end[0] + deltaX, item.end[1] + deltaY],
+              }
+            : item,
+        ),
+        doors: current.doors.map((item) =>
+          item.id === id || item.wallId === id
+            ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
+            : item,
+        ),
+        windows: current.windows.map((item) =>
+          item.id === id || item.wallId === id
+            ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
+            : item,
+        ),
+        columns: current.columns.map(movePoint),
+        stairs: current.stairs?.map(movePoint),
+        roofs: current.roofs?.map(movePoint),
+        services: current.services?.map(movePoint),
+      },
+      transient,
+    );
   };
   const resizeElement = (
     id: string,
@@ -697,9 +808,26 @@ function ProjectEditor({ projectId }: { projectId: string }) {
         area: Math.max(0.1, Math.round(item.area * ratio * 10) / 10),
       };
     });
-    const roofs = current.roofs?.map((item) => item.id === id
-      ? (() => { const bounds = resizeBounds({ x: item.x, y: item.y, width: item.width, height: item.depth }, handle, deltaX, deltaY, 40); return { ...item, x: bounds.x, y: bounds.y, width: bounds.width, depth: bounds.height }; })()
-      : item);
+    const roofs = current.roofs?.map((item) =>
+      item.id === id
+        ? (() => {
+            const bounds = resizeBounds(
+              { x: item.x, y: item.y, width: item.width, height: item.depth },
+              handle,
+              deltaX,
+              deltaY,
+              40,
+            );
+            return {
+              ...item,
+              x: bounds.x,
+              y: bounds.y,
+              width: bounds.width,
+              depth: bounds.height,
+            };
+          })()
+        : item,
+    );
     const walls = current.walls.map((item) =>
       item.id === id
         ? {
@@ -804,16 +932,19 @@ function ProjectEditor({ projectId }: { projectId: string }) {
         radius: Math.max(bounds.width, bounds.height) / 2,
       };
     });
-    persist({
-      ...current,
-      rooms,
-      roofs,
-      walls,
-      doors: current.doors.map(resizeOpening),
-      windows: current.windows.map(resizeOpening),
-      columns,
-      stairs,
-    }, transient);
+    persist(
+      {
+        ...current,
+        rooms,
+        roofs,
+        walls,
+        doors: current.doors.map(resizeOpening),
+        windows: current.windows.map(resizeOpening),
+        columns,
+        stairs,
+      },
+      transient,
+    );
   };
   const handleWheelZoom = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (event.shiftKey) return;
@@ -892,7 +1023,10 @@ function ProjectEditor({ projectId }: { projectId: string }) {
           Math.round(state.height + (event.clientY - state.y) * factor),
         )
       : state.height;
-    persist({ ...(editedBlueprintRef.current ?? blueprint), width, height }, true);
+    persist(
+      { ...(editedBlueprintRef.current ?? blueprint), width, height },
+      true,
+    );
   };
   const stopCanvasResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (canvasResize.current?.pointerId === event.pointerId) {
@@ -926,15 +1060,39 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     (item) => item.id === selectedId,
   );
   const selectedRoof = blueprint.roofs?.find((item) => item.id === selectedId);
-  const selectedService = blueprint.services?.find((item) => item.id === selectedId);
-  const selectedServiceGroup = selectedService && ["water", "drain"].includes(selectedService.kind) ? "plumbing" : "electrical";
-  const connectedRoutes = (blueprint.routes ?? []).filter((route) => route.fromId === selectedService?.id || route.toId === selectedService?.id);
-  const routeTargets = (blueprint.services ?? []).filter((point) =>
-    selectedService && point.id !== selectedService.id && point.levelId === selectedService.levelId &&
-    (["water", "drain"].includes(point.kind) ? "plumbing" : "electrical") === selectedServiceGroup &&
-    !connectedRoutes.some((route) => route.fromId === point.id || route.toId === point.id));
-  const selectedElement = selectedRoom ?? selectedWall ?? selectedOpening ?? selectedColumn ?? selectedStair ?? selectedRoof ?? selectedService;
-  const selectedSourceSheet = selectedElement && sourceSheetForElement(blueprint, selectedElement);
+  const selectedService = blueprint.services?.find(
+    (item) => item.id === selectedId,
+  );
+  const selectedServiceGroup =
+    selectedService && ["water", "drain"].includes(selectedService.kind)
+      ? "plumbing"
+      : "electrical";
+  const connectedRoutes = (blueprint.routes ?? []).filter(
+    (route) =>
+      route.fromId === selectedService?.id ||
+      route.toId === selectedService?.id,
+  );
+  const routeTargets = (blueprint.services ?? []).filter(
+    (point) =>
+      selectedService &&
+      point.id !== selectedService.id &&
+      point.levelId === selectedService.levelId &&
+      (["water", "drain"].includes(point.kind) ? "plumbing" : "electrical") ===
+        selectedServiceGroup &&
+      !connectedRoutes.some(
+        (route) => route.fromId === point.id || route.toId === point.id,
+      ),
+  );
+  const selectedElement =
+    selectedRoom ??
+    selectedWall ??
+    selectedOpening ??
+    selectedColumn ??
+    selectedStair ??
+    selectedRoof ??
+    selectedService;
+  const selectedSourceSheet =
+    selectedElement && sourceSheetForElement(blueprint, selectedElement);
   const setRoomName = (name: string) => {
     if (!selectedRoom) return;
     persist({
@@ -965,126 +1123,167 @@ function ProjectEditor({ projectId }: { projectId: string }) {
     step?: number;
   }> = selectedRoof
     ? [
-        { key: "width", label: "Ancho de cubierta (px)", value: Math.round(selectedRoof.width), min: 40 },
-        { key: "roofDepth", label: "Fondo de cubierta (px)", value: Math.round(selectedRoof.depth), min: 40 },
-        { key: "roofThickness", label: "Espesor (m)", value: selectedRoof.thickness, min: 0.05, step: 0.01 },
-        { key: "roofElevation", label: "Altura sobre el nivel (m)", value: selectedRoof.elevation, min: 0.1, step: 0.05 },
-      ]
-    : selectedRoom
-    ? [
         {
           key: "width",
-          label: t("editor.width", "Ancho"),
-          value: Math.round(selectedRoom.width),
-          min: 60,
+          label: "Ancho de cubierta (px)",
+          value: Math.round(selectedRoof.width),
+          min: 40,
         },
         {
-          key: "height",
-          label: t("editor.height", "Alto"),
-          value: Math.round(selectedRoom.height),
-          min: 60,
+          key: "roofDepth",
+          label: "Fondo de cubierta (px)",
+          value: Math.round(selectedRoof.depth),
+          min: 40,
+        },
+        {
+          key: "roofThickness",
+          label: "Espesor (m)",
+          value: selectedRoof.thickness,
+          min: 0.05,
+          step: 0.01,
+        },
+        {
+          key: "roofElevation",
+          label: "Altura sobre el nivel (m)",
+          value: selectedRoof.elevation,
+          min: 0.1,
+          step: 0.05,
         },
       ]
-    : selectedWall
+    : selectedRoom
       ? [
           {
-            key: "wallHeight",
-            label: t("import.heightM"),
-            value: selectedWall.height,
-            min: 0.1,
-            step: 0.05,
+            key: "width",
+            label: t("editor.width", "Ancho"),
+            value: Math.round(selectedRoom.width),
+            min: 60,
           },
           {
-            key: "length",
-            label: t("editor.length", "Longitud"),
-            value: Math.round(
-              Math.hypot(
-                selectedWall.end[0] - selectedWall.start[0],
-                selectedWall.end[1] - selectedWall.start[1],
-              ),
-            ),
-            min: 24,
-          },
-          {
-            key: "thickness",
-            label: t("editor.thickness", "Espesor"),
-            value: selectedWall.thickness,
-            min: 4,
-          },
-          {
-            key: "rotation",
-            label: t("editor.rotation", "Rotación °"),
-            value: Math.round(
-              (Math.atan2(
-                selectedWall.end[1] - selectedWall.start[1],
-                selectedWall.end[0] - selectedWall.start[0],
-              ) *
-                180) /
-                Math.PI,
-            ),
-            step: 1,
+            key: "height",
+            label: t("editor.height", "Alto"),
+            value: Math.round(selectedRoom.height),
+            min: 60,
           },
         ]
-      : selectedOpening
+      : selectedWall
         ? [
             {
-              key: "openingHeight",
+              key: "wallHeight",
               label: t("import.heightM"),
-              value:
-                selectedOpening.height ??
-                (blueprint.windows.some((item) => item.id === selectedId)
-                  ? 1.05
-                  : 2.12),
+              value: selectedWall.height,
               min: 0.1,
               step: 0.05,
             },
             {
-              key: "sillHeight",
-              label: t("import.sillM"),
-              value:
-                selectedOpening.sillHeight ??
-                (blueprint.windows.some((item) => item.id === selectedId)
-                  ? 0.9
-                  : 0),
-              min: 0,
-              step: 0.05,
+              key: "length",
+              label: t("editor.length", "Longitud"),
+              value: Math.round(
+                Math.hypot(
+                  selectedWall.end[0] - selectedWall.start[0],
+                  selectedWall.end[1] - selectedWall.start[1],
+                ),
+              ),
+              min: 24,
             },
             {
-              key: "width",
-              label: t("editor.width", "Ancho"),
-              value: Math.round(selectedOpening.width),
-              min: 24,
+              key: "thickness",
+              label: t("editor.thickness", "Espesor"),
+              value: selectedWall.thickness,
+              min: 4,
             },
             {
               key: "rotation",
               label: t("editor.rotation", "Rotación °"),
-              value: Math.round(selectedOpening.rotation),
+              value: Math.round(
+                (Math.atan2(
+                  selectedWall.end[1] - selectedWall.start[1],
+                  selectedWall.end[0] - selectedWall.start[0],
+                ) *
+                  180) /
+                  Math.PI,
+              ),
               step: 1,
             },
           ]
-        : selectedColumn
+        : selectedOpening
           ? [
               {
-                key: "size",
-                label: t("editor.size", "Tamaño"),
-                value: Math.round(selectedColumn.size),
-                min: 12,
+                key: "openingHeight",
+                label: t("import.heightM"),
+                value:
+                  selectedOpening.height ??
+                  (blueprint.windows.some((item) => item.id === selectedId)
+                    ? 1.05
+                    : 2.12),
+                min: 0.1,
+                step: 0.05,
+              },
+              {
+                key: "sillHeight",
+                label: t("import.sillM"),
+                value:
+                  selectedOpening.sillHeight ??
+                  (blueprint.windows.some((item) => item.id === selectedId)
+                    ? 0.9
+                    : 0),
+                min: 0,
+                step: 0.05,
+              },
+              {
+                key: "width",
+                label: t("editor.width", "Ancho"),
+                value: Math.round(selectedOpening.width),
+                min: 24,
+              },
+              {
+                key: "rotation",
+                label: t("editor.rotation", "Rotación °"),
+                value: Math.round(selectedOpening.rotation),
+                step: 1,
               },
             ]
-          : selectedStair
-            ? selectedStair.type === "straight" ? [
-                { key: "diameter", label: t("editor.stairWidth", "Ancho"), value: Math.round(selectedStair.radius * 2), min: 40 },
-                { key: "length", label: t("editor.length", "Longitud"), value: Math.round(selectedStair.length ?? selectedStair.radius * 4), min: 60 },
-                { key: "rotation", label: t("editor.rotation", "Rotación"), value: Math.round(selectedStair.rotation ?? 0), min: -360 },
-              ] : [
+          : selectedColumn
+            ? [
                 {
-                  key: "diameter",
-                  label: t("editor.diameter", "Diámetro"),
-                  value: Math.round(selectedStair.radius * 2),
-                  min: 40,
+                  key: "size",
+                  label: t("editor.size", "Tamaño"),
+                  value: Math.round(selectedColumn.size),
+                  min: 12,
                 },
               ]
-            : [];
+            : selectedStair
+              ? selectedStair.type === "straight"
+                ? [
+                    {
+                      key: "diameter",
+                      label: t("editor.stairWidth", "Ancho"),
+                      value: Math.round(selectedStair.radius * 2),
+                      min: 40,
+                    },
+                    {
+                      key: "length",
+                      label: t("editor.length", "Longitud"),
+                      value: Math.round(
+                        selectedStair.length ?? selectedStair.radius * 4,
+                      ),
+                      min: 60,
+                    },
+                    {
+                      key: "rotation",
+                      label: t("editor.rotation", "Rotación"),
+                      value: Math.round(selectedStair.rotation ?? 0),
+                      min: -360,
+                    },
+                  ]
+                : [
+                    {
+                      key: "diameter",
+                      label: t("editor.diameter", "Diámetro"),
+                      value: Math.round(selectedStair.radius * 2),
+                      min: 40,
+                    },
+                  ]
+              : [];
   const setElementMetric = (
     key: (typeof selectedMetrics)[number]["key"],
     value: number,
@@ -1176,28 +1375,45 @@ function ProjectEditor({ projectId }: { projectId: string }) {
           : item,
       ),
       stairs: blueprint.stairs?.map((item) =>
-        item.id === selectedId ? {
-          ...item,
-          ...(key === "diameter" ? { radius: Math.max(40, value) / 2 } : {}),
-          ...(item.type === "straight" && key === "length" ? { length: Math.max(60, value) } : {}),
-          ...(item.type === "straight" && key === "rotation" ? { rotation: value } : {}),
-        } : item,
+        item.id === selectedId
+          ? {
+              ...item,
+              ...(key === "diameter"
+                ? { radius: Math.max(40, value) / 2 }
+                : {}),
+              ...(item.type === "straight" && key === "length"
+                ? { length: Math.max(60, value) }
+                : {}),
+              ...(item.type === "straight" && key === "rotation"
+                ? { rotation: value }
+                : {}),
+            }
+          : item,
       ),
       roofs: blueprint.roofs?.map((item) =>
-        item.id === selectedId ? {
-          ...item,
-          ...(key === "width" ? { width: Math.max(40, value) } : {}),
-          ...(key === "roofDepth" ? { depth: Math.max(40, value) } : {}),
-          ...(key === "roofThickness" ? { thickness: Math.max(0.05, Math.min(2, value)) } : {}),
-          ...(key === "roofElevation" ? { elevation: Math.max(0.1, Math.min(100, value)) } : {}),
-        } : item,
+        item.id === selectedId
+          ? {
+              ...item,
+              ...(key === "width" ? { width: Math.max(40, value) } : {}),
+              ...(key === "roofDepth" ? { depth: Math.max(40, value) } : {}),
+              ...(key === "roofThickness"
+                ? { thickness: Math.max(0.05, Math.min(2, value)) }
+                : {}),
+              ...(key === "roofElevation"
+                ? { elevation: Math.max(0.1, Math.min(100, value)) }
+                : {}),
+            }
+          : item,
       ),
     });
   };
 
   const downloadDraft = () => {
-    const draft = save.latestDraft.current ?? editedBlueprintRef.current ?? blueprint;
-    const blob = new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" });
+    const draft =
+      save.latestDraft.current ?? editedBlueprintRef.current ?? blueprint;
+    const blob = new Blob([JSON.stringify(draft, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1241,32 +1457,50 @@ function ProjectEditor({ projectId }: { projectId: string }) {
             <div
               className="editor-save-feedback"
               data-state={save.status}
-              role={save.status === "error" || save.status === "conflict" ? "alert" : "status"}
+              role={
+                save.status === "error" || save.status === "conflict"
+                  ? "alert"
+                  : "status"
+              }
               title={save.error ?? undefined}
             >
               <span className="editor-save-dot" aria-hidden="true" />
               <span>{t("editor.save." + save.status)}</span>
               {save.status === "error" && (
-                <button onClick={() => void save.retry().catch(() => undefined)}>
+                <button
+                  onClick={() => void save.retry().catch(() => undefined)}
+                >
                   {t("editor.save.retry")}
                 </button>
               )}
               {(save.status === "error" || save.status === "conflict") && (
-                <button onClick={downloadDraft}>{t("editor.save.download")}</button>
+                <button onClick={downloadDraft}>
+                  {t("editor.save.download")}
+                </button>
               )}
               {save.status === "conflict" && (
-                <button onClick={() => { if (confirmDiscard()) window.location.reload(); }}>
+                <button
+                  onClick={() => {
+                    if (confirmDiscard()) window.location.reload();
+                  }}
+                >
                   {t("editor.save.reload")}
                 </button>
               )}
             </div>
-            <button className="pm-button" disabled={save.status !== "saved"} onClick={() => setImportOpen(true)}>
+            <button
+              className="pm-button"
+              disabled={save.status !== "saved"}
+              onClick={() => setImportOpen(true)}
+            >
               <ImageIcon size={15} />
               {t("import.title")}
             </button>
             <Link
               href={`/projects/${projectId}/editor`}
-              onClick={(event) => { if (!confirmDiscard()) event.preventDefault(); }}
+              onClick={(event) => {
+                if (!confirmDiscard()) event.preventDefault();
+              }}
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9ddd4] bg-[#fbfbf7] px-3.5 text-xs font-semibold"
             >
               {t("editor.exitEditor", "Salir del editor")}
@@ -1280,7 +1514,9 @@ function ProjectEditor({ projectId }: { projectId: string }) {
             <Link
               href={`/projects/${projectId}/model`}
               aria-disabled={save.status !== "saved"}
-              onClick={(event) => { if (save.status !== "saved") event.preventDefault(); }}
+              onClick={(event) => {
+                if (save.status !== "saved") event.preventDefault();
+              }}
               className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#ff6a2b] px-4 text-xs font-semibold text-white"
             >
               <Box size={15} /> {t("editor.generate3d", "Generar modelo 3D")}
@@ -1290,41 +1526,91 @@ function ProjectEditor({ projectId }: { projectId: string }) {
       />
 
       <div className="px-3 pt-3">
-      <Panel className="flex flex-wrap items-end gap-3 p-3">
-        <label className="min-w-40 flex-1 text-[10px] font-semibold text-[#58665e]">
-          {t("import.level")}
-          <select className="mt-1 w-full rounded-lg border border-[#d9ddd4] bg-white px-3 py-2 text-xs" value={levelId}
-            onChange={(event) => { setActiveLevelId(event.target.value); setActiveSheetId(""); setSelectedId(null); }}>
-            {blueprint.levels.map((level) => <option key={level.id} value={level.id}>{level.name} · {level.elevation} m</option>)}
-          </select>
-        </label>
-        <label className="min-w-48 flex-[2] text-[10px] font-semibold text-[#58665e]">
-          {t("editor.sourceSheet")}
-          <select className="mt-1 w-full rounded-lg border border-[#d9ddd4] bg-white px-3 py-2 text-xs" value={currentSheet?.id ?? ""}
-            onChange={(event) => setActiveSheetId(event.target.value)}>
-            {!currentSheet && <option value="">Sin hoja</option>}
-            {blueprint.sheets?.filter((sheet) => sheet.levelId === levelId).map((sheet) => (
-              <option key={sheet.id} value={sheet.id}>{sheet.name} · {t(`import.discipline.${sheet.discipline}`, sheet.discipline)}</option>
-            ))}
-          </select>
-        </label>
-        <button className="pm-button" type="button" onClick={() => addLevel(false)}>{t("editor.addFloor")}</button>
-        <button className="pm-button" type="button" onClick={() => addLevel(true)}>{t("editor.addBasement")}</button>
-        <span className="text-[10px] text-[#66746b]">{visibleBlueprint.rooms.length} ambientes · {visibleBlueprint.walls.length} muros · {visibleBlueprint.roofs?.length ?? 0} cubiertas</span>
-      </Panel>
-      {tool === "service" && (
-        <Panel className="mt-2 flex flex-wrap items-center gap-3 p-3">
-          <label className="text-[10px] font-semibold">{t("editor.serviceKind")}
-            <select value={serviceKind} onChange={(event) => setServiceKind(event.target.value as ServiceKind)}
-              className="ml-2 rounded-lg border border-[#d9ddd4] bg-white px-3 py-2 text-xs">
-              <option value="outlet">Tomacorriente</option><option value="switch">Interruptor</option>
-              <option value="light">Luminaria</option><option value="panel">Tablero eléctrico</option>
-              <option value="water">Punto de agua</option><option value="drain">Desagüe</option>
+        <Panel className="flex flex-wrap items-end gap-3 p-3">
+          <label className="min-w-40 flex-1 text-[10px] font-semibold text-[#58665e]">
+            {t("import.level")}
+            <select
+              className="mt-1 w-full rounded-lg border border-[#d9ddd4] bg-white px-3 py-2 text-xs"
+              value={levelId}
+              onChange={(event) => {
+                setActiveLevelId(event.target.value);
+                setActiveSheetId("");
+                setSelectedId(null);
+              }}
+            >
+              {blueprint.levels.map((level) => (
+                <option key={level.id} value={level.id}>
+                  {level.name} · {level.elevation} m
+                </option>
+              ))}
             </select>
           </label>
-          <span className="text-xs text-[#66746b]">Haz clic en la hoja para ubicar el elemento; confirma su posición con el plano original.</span>
+          <label className="min-w-48 flex-[2] text-[10px] font-semibold text-[#58665e]">
+            {t("editor.sourceSheet")}
+            <select
+              className="mt-1 w-full rounded-lg border border-[#d9ddd4] bg-white px-3 py-2 text-xs"
+              value={currentSheet?.id ?? ""}
+              onChange={(event) => setActiveSheetId(event.target.value)}
+            >
+              {!currentSheet && <option value="">Sin hoja</option>}
+              {blueprint.sheets
+                ?.filter((sheet) => sheet.levelId === levelId)
+                .map((sheet) => (
+                  <option key={sheet.id} value={sheet.id}>
+                    {sheet.name} ·{" "}
+                    {t(
+                      `import.discipline.${sheet.discipline}`,
+                      sheet.discipline,
+                    )}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <button
+            className="pm-button"
+            type="button"
+            onClick={() => addLevel(false)}
+          >
+            {t("editor.addFloor")}
+          </button>
+          <button
+            className="pm-button"
+            type="button"
+            onClick={() => addLevel(true)}
+          >
+            {t("editor.addBasement")}
+          </button>
+          <span className="text-[10px] text-[#66746b]">
+            {visibleBlueprint.rooms.length} ambientes ·{" "}
+            {visibleBlueprint.walls.length} muros ·{" "}
+            {visibleBlueprint.roofs?.length ?? 0} cubiertas
+          </span>
         </Panel>
-      )}
+        {tool === "service" && (
+          <Panel className="mt-2 flex flex-wrap items-center gap-3 p-3">
+            <label className="text-[10px] font-semibold">
+              {t("editor.serviceKind")}
+              <select
+                value={serviceKind}
+                onChange={(event) =>
+                  setServiceKind(event.target.value as ServiceKind)
+                }
+                className="ml-2 rounded-lg border border-[#d9ddd4] bg-white px-3 py-2 text-xs"
+              >
+                <option value="outlet">Tomacorriente</option>
+                <option value="switch">Interruptor</option>
+                <option value="light">Luminaria</option>
+                <option value="panel">Tablero eléctrico</option>
+                <option value="water">Punto de agua</option>
+                <option value="drain">Desagüe</option>
+              </select>
+            </label>
+            <span className="text-xs text-[#66746b]">
+              Haz clic en la hoja para ubicar el elemento; confirma su posición
+              con el plano original.
+            </span>
+          </Panel>
+        )}
       </div>
       <div className="editor-workbench">
         <Panel className="editor-toolrail flex gap-2 overflow-x-auto p-2 xl:flex-col xl:overflow-y-auto">
@@ -1456,9 +1742,13 @@ function ProjectEditor({ projectId }: { projectId: string }) {
                   overlayOpacity={overlayOpacity / 100}
                   onSelect={selectElement}
                   onCanvasClick={addAt}
-                  onMove={(id, deltaX, deltaY) => moveElement(id, deltaX, deltaY, true)}
+                  onMove={(id, deltaX, deltaY) =>
+                    moveElement(id, deltaX, deltaY, true)
+                  }
                   onMoveStart={startDragEdit}
-                  onResize={(id, handle, deltaX, deltaY) => resizeElement(id, handle, deltaX, deltaY, true)}
+                  onResize={(id, handle, deltaX, deltaY) =>
+                    resizeElement(id, handle, deltaX, deltaY, true)
+                  }
                   onResizeStart={startDragEdit}
                   onInteractionEnd={finishDragEdit}
                 />
@@ -1620,6 +1910,17 @@ function ProjectEditor({ projectId }: { projectId: string }) {
               setSelectedId(elementId);
             }}
           />
+          <DrawingCorrespondencePanel
+            plan={blueprint}
+            disabled={!editMode || save.status !== "saved"}
+            onImport={() => setImportOpen(true)}
+            onSave={async (next) => {
+              await save.commit(next);
+              remember();
+              editedBlueprintRef.current = next;
+              setEditedBlueprint(next);
+            }}
+          />
           {selectedId && (
             <>
               <Link
@@ -1672,12 +1973,33 @@ function ProjectEditor({ projectId }: { projectId: string }) {
                     Nombre del elemento
                     <input
                       aria-label="Nombre del elemento"
-                      value={selectedRoom?.name ?? selectedRoof?.name ?? selectedService?.name ?? ""}
+                      value={
+                        selectedRoom?.name ??
+                        selectedRoof?.name ??
+                        selectedService?.name ??
+                        ""
+                      }
                       onChange={(event) => {
                         const name = event.target.value;
                         if (selectedRoom) setRoomName(name);
-                        else if (selectedRoof) persist({ ...blueprint, roofs: blueprint.roofs?.map((item) => item.id === selectedRoof.id ? { ...item, name: name || "Cubierta" } : item) });
-                        else if (selectedService) persist({ ...blueprint, services: blueprint.services?.map((item) => item.id === selectedService.id ? { ...item, name: name || "Instalación" } : item) });
+                        else if (selectedRoof)
+                          persist({
+                            ...blueprint,
+                            roofs: blueprint.roofs?.map((item) =>
+                              item.id === selectedRoof.id
+                                ? { ...item, name: name || "Cubierta" }
+                                : item,
+                            ),
+                          });
+                        else if (selectedService)
+                          persist({
+                            ...blueprint,
+                            services: blueprint.services?.map((item) =>
+                              item.id === selectedService.id
+                                ? { ...item, name: name || "Instalación" }
+                                : item,
+                            ),
+                          });
                       }}
                       className="mt-1 h-10 w-full rounded-lg border border-[#d9ddd4] bg-white px-3 text-xs outline-none focus:border-[#2563eb]"
                     />
@@ -1691,15 +2013,42 @@ function ProjectEditor({ projectId }: { projectId: string }) {
                       value={selectedService.kind}
                       onChange={(event) => {
                         const kind = event.target.value as ServiceKind;
-                        const sheet = blueprint.sheets?.find((item) => item.id === selectedService.sheetId);
-                        const matchingDiscipline = ["water", "drain"].includes(kind) ? "plumbing" : "electrical";
-                        const previousDiscipline = ["water", "drain"].includes(selectedService.kind) ? "plumbing" : "electrical";
-                        persist({ ...blueprint, services: blueprint.services?.map((item) =>
-                          item.id === selectedService.id
-                            ? { ...item, kind, sheetId: sheet?.discipline === matchingDiscipline ? item.sheetId : undefined }
-                            : item,
-                        ), routes: previousDiscipline === matchingDiscipline ? blueprint.routes :
-                          blueprint.routes?.filter((route) => route.fromId !== selectedService.id && route.toId !== selectedService.id) });
+                        const sheet = blueprint.sheets?.find(
+                          (item) => item.id === selectedService.sheetId,
+                        );
+                        const matchingDiscipline = ["water", "drain"].includes(
+                          kind,
+                        )
+                          ? "plumbing"
+                          : "electrical";
+                        const previousDiscipline = ["water", "drain"].includes(
+                          selectedService.kind,
+                        )
+                          ? "plumbing"
+                          : "electrical";
+                        persist({
+                          ...blueprint,
+                          services: blueprint.services?.map((item) =>
+                            item.id === selectedService.id
+                              ? {
+                                  ...item,
+                                  kind,
+                                  sheetId:
+                                    sheet?.discipline === matchingDiscipline
+                                      ? item.sheetId
+                                      : undefined,
+                                }
+                              : item,
+                          ),
+                          routes:
+                            previousDiscipline === matchingDiscipline
+                              ? blueprint.routes
+                              : blueprint.routes?.filter(
+                                  (route) =>
+                                    route.fromId !== selectedService.id &&
+                                    route.toId !== selectedService.id,
+                                ),
+                        });
                       }}
                       className="mt-1 h-10 w-full rounded-lg border border-[#d9ddd4] bg-white px-3 text-xs"
                     >
@@ -1714,39 +2063,104 @@ function ProjectEditor({ projectId }: { projectId: string }) {
                 )}
                 {selectedService && (
                   <div className="mt-4 rounded-xl border border-[#d9ddd4] p-3">
-                    <strong className="text-xs">{t("editor.serviceRoutes")}</strong>
-                    <p className="mt-1 text-[10px] text-[#68746e]">{t("editor.routeDisclaimer")}</p>
+                    <strong className="text-xs">
+                      {t("editor.serviceRoutes")}
+                    </strong>
+                    <p className="mt-1 text-[10px] text-[#68746e]">
+                      {t("editor.routeDisclaimer")}
+                    </p>
                     <label className="mt-3 block text-[10px] font-semibold">
                       {t("editor.connectTo")}
-                      <select value={routeTargets.some((point) => point.id === routeTargetId) ? routeTargetId : ""}
-                        onChange={(event) => setRouteTargetId(event.target.value)}
-                        className="mt-1 w-full rounded-lg border border-[#d9ddd4] bg-white px-2 py-2 text-xs">
+                      <select
+                        value={
+                          routeTargets.some(
+                            (point) => point.id === routeTargetId,
+                          )
+                            ? routeTargetId
+                            : ""
+                        }
+                        onChange={(event) =>
+                          setRouteTargetId(event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-[#d9ddd4] bg-white px-2 py-2 text-xs"
+                      >
                         <option value="">{t("editor.chooseService")}</option>
-                        {routeTargets.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}
+                        {routeTargets.map((point) => (
+                          <option key={point.id} value={point.id}>
+                            {point.name}
+                          </option>
+                        ))}
                       </select>
                     </label>
-                    <button type="button" className="pm-button mt-2 w-full" disabled={!routeTargets.some((point) => point.id === routeTargetId)}
+                    <button
+                      type="button"
+                      className="pm-button mt-2 w-full"
+                      disabled={
+                        !routeTargets.some(
+                          (point) => point.id === routeTargetId,
+                        )
+                      }
                       onClick={() => {
-                        const target = routeTargets.find((point) => point.id === routeTargetId);
+                        const target = routeTargets.find(
+                          (point) => point.id === routeTargetId,
+                        );
                         if (!target) return;
                         remember();
-                        persist({ ...blueprint, routes: [...(blueprint.routes ?? []), {
-                          id: `route-${crypto.randomUUID()}`, levelId: selectedService.levelId,
-                          kind: selectedServiceGroup,
-                          fromId: selectedService.id, toId: target.id,
-                          sheetId: selectedService.sheetId === target.sheetId ? selectedService.sheetId : undefined,
-                        }] });
+                        persist({
+                          ...blueprint,
+                          routes: [
+                            ...(blueprint.routes ?? []),
+                            {
+                              id: `route-${crypto.randomUUID()}`,
+                              levelId: selectedService.levelId,
+                              kind: selectedServiceGroup,
+                              fromId: selectedService.id,
+                              toId: target.id,
+                              sheetId:
+                                selectedService.sheetId === target.sheetId
+                                  ? selectedService.sheetId
+                                  : undefined,
+                            },
+                          ],
+                        });
                         setRouteTargetId("");
-                      }}>{t("editor.addRoute")}</button>
+                      }}
+                    >
+                      {t("editor.addRoute")}
+                    </button>
                     {connectedRoutes.map((route) => {
-                      const other = blueprint.services?.find((point) => point.id === (route.fromId === selectedService.id ? route.toId : route.fromId));
-                      return <div key={route.id} className="mt-2 flex items-center justify-between gap-2 text-[10px]">
-                        <span className="min-w-0 truncate">{other?.name ?? route.id}</span>
-                        <button type="button" className="text-[#b84438]" onClick={() => {
-                          remember();
-                          persist({ ...blueprint, routes: blueprint.routes?.filter((item) => item.id !== route.id) });
-                        }}>{t("editor.removeRoute")}</button>
-                      </div>;
+                      const other = blueprint.services?.find(
+                        (point) =>
+                          point.id ===
+                          (route.fromId === selectedService.id
+                            ? route.toId
+                            : route.fromId),
+                      );
+                      return (
+                        <div
+                          key={route.id}
+                          className="mt-2 flex items-center justify-between gap-2 text-[10px]"
+                        >
+                          <span className="min-w-0 truncate">
+                            {other?.name ?? route.id}
+                          </span>
+                          <button
+                            type="button"
+                            className="text-[#b84438]"
+                            onClick={() => {
+                              remember();
+                              persist({
+                                ...blueprint,
+                                routes: blueprint.routes?.filter(
+                                  (item) => item.id !== route.id,
+                                ),
+                              });
+                            }}
+                          >
+                            {t("editor.removeRoute")}
+                          </button>
+                        </div>
+                      );
                     })}
                   </div>
                 )}
@@ -1818,12 +2232,22 @@ function ProjectEditor({ projectId }: { projectId: string }) {
                     },
                     {
                       label: t("editor.level", "Nivel"),
-                      value: blueprint.levels.find((item) => item.id === (
-                        selectedRoof?.levelId ?? selectedService?.levelId ??
-                        selectedRoom?.levelId ?? selectedWall?.levelId ??
-                        selectedOpening?.levelId ?? selectedColumn?.levelId ??
-                        selectedStair?.levelId ?? (blueprint.levels.find((item) => item.elevation === 0)?.id ?? blueprint.levels[0].id)
-                      ))?.name ?? "—",
+                      value:
+                        blueprint.levels.find(
+                          (item) =>
+                            item.id ===
+                            (selectedRoof?.levelId ??
+                              selectedService?.levelId ??
+                              selectedRoom?.levelId ??
+                              selectedWall?.levelId ??
+                              selectedOpening?.levelId ??
+                              selectedColumn?.levelId ??
+                              selectedStair?.levelId ??
+                              blueprint.levels.find(
+                                (item) => item.elevation === 0,
+                              )?.id ??
+                              blueprint.levels[0].id),
+                        )?.name ?? "—",
                     },
                     {
                       label: t("editor.height", "Altura"),

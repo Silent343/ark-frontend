@@ -18,6 +18,7 @@ export function compileCadModel(
       { type: "module" },
     );
     const cleanup = () => {
+      clearTimeout(timeout);
       worker.terminate();
       signal?.removeEventListener("abort", abort);
     };
@@ -25,6 +26,14 @@ export function compileCadModel(
       cleanup();
       reject(new DOMException("Cancelled", "AbortError"));
     };
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(
+        new Error(
+          "La reconstrucción superó 90 segundos. Confirma las unidades y delimita una sola planta antes de volver a intentarlo.",
+        ),
+      );
+    }, 90_000);
     signal?.addEventListener("abort", abort, { once: true });
     worker.onmessage = (
       event: MessageEvent<{ blueprint?: Blueprint; error?: string }>,

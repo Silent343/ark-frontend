@@ -31,11 +31,16 @@ export function suggestCadRole(name: string): CadRole {
     .toLowerCase();
   if (/cota|text|relleno|eje|hoja|grilla|defpoint/.test(key))
     return "reference";
-  if (/muro|pared|wall/.test(key)) return "wall";
+  if (/demol|hatch|sombra|proyecc/.test(key)) return "reference";
+  if (/muro|pared|wall|tabiq/.test(key)) return "wall";
   if (/puerta|door/.test(key)) return "door";
-  if (/ventana|vidrio|window|glaz|cancel/.test(key)) return "window";
+  if (
+    /ventana|(?:^|[_$ -])vent(?:[_$ -]|$)|vidrio|window|glaz|cancel/.test(key)
+  )
+    return "window";
   if (/columna|column|pilar/.test(key)) return "column";
-  if (/grada|escalera|stair/.test(key)) return "stair";
+  if (/grada|escalera|(?:^|[_$ -])esc(?:[_$ -]|$)|stair/.test(key))
+    return "stair";
   if (/mueble|mobiliario|furn|equipo|barra|jardiner|carros/.test(key))
     return "furniture";
   if (/techo|cubierta|roof/.test(key)) return "roof";
@@ -321,14 +326,22 @@ export function createCadPlan(
   layers: Array<{ name: string; visible: boolean; count: number }>,
   skipped: Record<string, number>,
   floorHeight = 2.8,
+  metersPerCadUnit?: number,
 ): CadPlan {
+  if (
+    metersPerCadUnit !== undefined &&
+    (!Number.isFinite(metersPerCadUnit) ||
+      metersPerCadUnit <= 0 ||
+      metersPerCadUnit > 1000)
+  )
+    throw new Error("Invalid CAD units.");
   const plan: CadPlan = {
     sourceName,
     entities,
     layers: layers.map((l) => ({ ...l, role: suggestCadRole(l.name) })),
     bounds: drawingBounds(entities),
-    metersPerCadUnit: 1,
-    unitConfirmed: false,
+    metersPerCadUnit: metersPerCadUnit ?? 1,
+    unitConfirmed: metersPerCadUnit !== undefined,
     regions: [],
     skipped,
   };

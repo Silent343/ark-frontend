@@ -11,7 +11,13 @@ export interface ElementEvidence {
   sourceName: string;
   regionId: string;
   sourceIds: string[];
-  method: "paired-faces" | "cad-symbol" | "closed-contour" | "treads" | "cad-text";
+  method:
+    | "paired-faces"
+    | "cad-symbol"
+    | "closed-contour"
+    | "treads"
+    | "cad-text"
+    | "neural-mask";
   /** Properties whose values are placeholders rather than measurements. */
   assumed: string[];
 }
@@ -89,6 +95,7 @@ export type PlanDiscipline =
 
 /** A source page stays identifiable even when several drawings share a level. */
 export interface PlanSheet {
+  viewType?: import("../drawing-coordination").DrawingView;
   /** Coordinates are aligned to the shared project sheet. */
   id: string;
   name: string;
@@ -171,6 +178,7 @@ export interface PlanReview {
 
 /** Shared, calibrated geometry consumed by both editors and the procedural renderer. */
 export interface Blueprint {
+  correspondences?: import("../drawing-coordination").DrawingCorrespondence[];
   intent?: "visualization" | "coordination" | "bim-preparation";
   elementEvidence?: Record<string, ElementEvidence>;
   cad?: CadPlan;

@@ -52,5 +52,5 @@ export default defineConfig([
     }
   },
   // Generated, unmodified upstream workers are copied from node_modules for local/offline OCR.
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "public/vendor/plan-tools/**"]),
+  globalIgnores([".next/**", ".data/**", "out/**", "build/**", "next-env.d.ts", "public/vendor/plan-tools/**"]),
 ]);

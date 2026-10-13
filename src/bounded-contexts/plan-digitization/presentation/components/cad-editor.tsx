@@ -43,6 +43,13 @@ import { compileCadModel } from "../../infrastructure/compile-cad-model";
 import { exportCadImage } from "../../infrastructure/cad-canvas-renderer";
 import { CadPlanCanvas } from "./cad-plan-canvas";
 import { useBlueprintSave } from "../use-blueprint-save";
+import { DrawingCorrespondencePanel } from "./drawing-correspondence-panel";
+import { NeuralCadPanel } from "./neural-cad-panel";
+import { PlanImportDialog, type SourceDocument } from "./plan-import-dialog";
+import {
+  drawingViewLabels,
+  type DrawingView,
+} from "../../domain/drawing-coordination";
 
 /** Commit complete numeric values, so typing a minus sign or decimal never moves geometry prematurely. */
 function CadNumberInput({
@@ -79,6 +86,7 @@ function CadNumberInput({
 }
 
 interface Props {
+  documents?: SourceDocument[];
   blueprint: Blueprint;
   projectName: string;
   floorHeight: number;
@@ -93,6 +101,7 @@ export function CadEditor({
   floorHeight,
   editMode,
   members,
+  documents = [],
 }: Props) {
   const params = useSearchParams();
   const initialSource = blueprint.cad!.entities.find(
@@ -106,12 +115,18 @@ export function CadEditor({
     initialSource?.id ?? null,
   );
   const [tool, setTool] = useState<"select" | "pan" | "region">("select");
-  const [panel, setPanel] = useState<"properties" | "layers" | "levels">(
-    params.get("panel") === "levels"
-      ? "levels"
-      : params.get("panel") === "layers"
-        ? "layers"
-        : "properties",
+  const [panel, setPanel] = useState<
+    "properties" | "layers" | "levels" | "coordination" | "recognition"
+  >(
+    params.get("panel") === "recognition"
+      ? "recognition"
+      : params.get("panel") === "coordination"
+        ? "coordination"
+        : params.get("panel") === "levels"
+          ? "levels"
+          : params.get("panel") === "layers"
+            ? "layers"
+            : "properties",
   );
   const [scope, setScope] = useState(
     blueprint.cad!.regions.find((r) => r.id === params.get("region"))?.id ?? "",
@@ -144,6 +159,14 @@ export function CadEditor({
   const base = useRef(blueprint),
     current = useRef(plan);
   const [savedModel, setSavedModel] = useState(blueprint);
+  const [referenceOpen, setReferenceOpen] = useState(false);
+  async function saveEvidence(next: Blueprint) {
+    if (dirty || save.status !== "saved")
+      throw new Error("Espera a que se guarde el plano.");
+    await commit(next);
+    base.current = next;
+    setSavedModel(next);
+  }
   useEffect(() => {
     current.current = plan;
   }, [plan]);
@@ -190,7 +213,7 @@ export function CadEditor({
   }
   const proposedHeight = (id: string) => {
     const entries = plan.regions
-      .filter((r) => r.enabled)
+      .filter((r) => r.enabled && (!r.viewType || r.viewType === "plan"))
       .flatMap((region) =>
         Array.from({ length: region.repeat }, (_, floor) => ({
           id: region.id,
@@ -211,7 +234,12 @@ export function CadEditor({
   function update(next: CadPlan) {
     changed.current = true;
     setDirty(true);
-    setPlan(next);
+    const ids = new Set(next.regions.map((r) => r.id));
+    setPlan(
+      next.neural
+        ? { ...next, neural: next.neural.filter((a) => ids.has(a.regionId)) }
+        : next,
+    );
   }
   // Save after a gesture or settled form edit, never serialize the full drawing on every pointer pixel.
   useEffect(() => {
@@ -310,7 +338,7 @@ export function CadEditor({
       setBusy(false);
     }
   }
-  async function importFile(file: File) {
+  async function importFile(file: File, related: File[] = []) {
     // Replacing an editable drawing is explicit; undo also retains the previous document.
     if (
       !window.confirm(
@@ -321,7 +349,7 @@ export function CadEditor({
     setBusy(true);
     setMessage("Leyendo entidades CAD…");
     try {
-      const source = await loadCadPlanSource(file);
+      const source = await loadCadPlanSource(file, undefined, related);
       try {
         if (!source.cad) throw new Error("Archivo CAD no válido.");
         const next = createCadPlan(
@@ -492,7 +520,21 @@ export function CadEditor({
               : (save.error ?? "Cambios pendientes")}
         </span>
         {save.status === "error" && (
-          <button className="pm-button" onClick={() => void save.retry()}>
+          <button
+            className="pm-button"
+            onClick={() => {
+              const next = save.latestDraft.current;
+              void save
+                .retry()
+                .then(() => {
+                  if (next) {
+                    base.current = next;
+                    setSavedModel(next);
+                  }
+                })
+                .catch((error) => setMessage((error as Error).message));
+            }}
+          >
             Reintentar
           </button>
         )}
@@ -530,7 +572,7 @@ export function CadEditor({
             <Hand size={18} />
           </button>
           <button
-            title="Delimitar una planta"
+            title="Delimitar una vista"
             aria-pressed={tool === "region"}
             onClick={() => setTool("region")}
           >
@@ -557,10 +599,15 @@ export function CadEditor({
           <input
             type="file"
             accept=".dwg,.dxf"
+            multiple
             disabled={busy}
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) void importFile(file);
+              if (file)
+                void importFile(
+                  file,
+                  Array.from(e.target.files ?? []).slice(1),
+                );
               e.target.value = "";
             }}
           />
@@ -602,13 +649,21 @@ export function CadEditor({
           />
           <div className="cad-canvas-hint">
             {tool === "region"
-              ? "Arrastra un rectángulo para delimitar una planta"
+              ? "Arrastra un rectángulo para delimitar una vista; después clasifícala"
               : "Rueda: zoom · Arrastra el fondo: desplazar · Clic: seleccionar · Supr: eliminar"}
           </div>
         </div>
         <aside className="cad-inspector">
           <div className="cad-inspector-tabs">
-            {(["properties", "layers", "levels"] as const).map((p) => (
+            {(
+              [
+                "properties",
+                "layers",
+                "levels",
+                "coordination",
+                "recognition",
+              ] as const
+            ).map((p) => (
               <button
                 key={p}
                 aria-pressed={panel === p}
@@ -618,7 +673,9 @@ export function CadEditor({
                   {
                     properties: "Elemento",
                     layers: "Capas",
-                    levels: "Plantas",
+                    levels: "Vistas",
+                    coordination: "Vincular",
+                    recognition: "IA",
                   }[p]
                 }
               </button>
@@ -993,6 +1050,13 @@ export function CadEditor({
                   Confirma la unidad antes de utilizar las medidas del modelo.
                 </p>
               )}
+              {savedModel.review?.warnings.includes("cad-awaiting-units") && (
+                <p className="cad-note">
+                  Primero delimita cada planta, confirma las unidades y marca
+                  «Incluir planta en 3D» solo en las vistas que quieras
+                  construir. No se reconstruye toda la lámina automáticamente.
+                </p>
+              )}
               <button
                 className="pm-button"
                 onClick={() => {
@@ -1008,13 +1072,37 @@ export function CadEditor({
               </button>
               <button className="pm-button" onClick={() => setTool("region")}>
                 <ScanLine size={14} />
-                Delimitar planta
+                Delimitar vista
               </button>
               {plan.regions.map((r) => (
                 <div className="cad-region-card" key={r.id}>
+                  <label>
+                    Tipo de vista
+                    <select
+                      value={r.viewType ?? "plan"}
+                      onChange={(e) =>
+                        editRegion(r.id, {
+                          viewType: e.target.value as DrawingView,
+                        })
+                      }
+                    >
+                      {Object.entries(drawingViewLabels).map(([id, name]) => (
+                        <option key={id} value={id}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    {r.viewType && r.viewType !== "plan" && (
+                      <small>
+                        Esta vista aporta evidencia; sus líneas no se extruyen
+                        como muros.
+                      </small>
+                    )}
+                  </label>
                   <label className="cad-inline-check">
                     <input
                       type="checkbox"
+                      disabled={!!r.viewType && r.viewType !== "plan"}
                       checked={r.enabled}
                       onChange={(e) => {
                         remember();
@@ -1028,7 +1116,7 @@ export function CadEditor({
                         });
                       }}
                     />
-                    Incluir en 3D
+                    Incluir planta en 3D
                   </label>
                   <label>
                     Nombre
@@ -1188,6 +1276,7 @@ export function CadEditor({
                       update({
                         ...plan,
                         regions: plan.regions.filter((v) => v.id !== r.id),
+                        neural: plan.neural?.filter((a) => a.regionId !== r.id),
                       });
                       if (scope === r.id) setScope("");
                     }}
@@ -1198,15 +1287,58 @@ export function CadEditor({
               ))}
             </div>
           )}
+          {panel === "coordination" && (
+            <DrawingCorrespondencePanel
+              plan={savedModel}
+              initialTargetId={params.get("target") ?? undefined}
+              disabled={!editMode || dirty || save.status !== "saved"}
+              onSave={saveEvidence}
+              onImport={() => setReferenceOpen(true)}
+              onFocus={(regionId, textId) => {
+                setScope(regionId);
+                setSelectedId(textId);
+                setFocusBounds(plan.regions.find((r) => r.id === regionId));
+                setFitKey((k) => k + 1);
+              }}
+            />
+          )}
+          {panel === "recognition" && (
+            <NeuralCadPanel
+              plan={plan}
+              projectId={blueprint.projectId}
+              disabled={!editMode || dirty || save.status !== "saved"}
+              onBusy={setBusy}
+              onUpdate={(next) => {
+                if (current.current !== plan)
+                  throw new Error(
+                    "El CAD cambió durante el análisis; vuelve a analizar la vista actual.",
+                  );
+                remember();
+                update(next);
+              }}
+            />
+          )}
         </aside>
       </div>
+      {referenceOpen && (
+        <PlanImportDialog
+          blueprint={savedModel}
+          documents={documents}
+          referenceOnly
+          onClose={() => setReferenceOpen(false)}
+          onSave={saveEvidence}
+        />
+      )}
       <footer className="cad-editor-footer">
         <span>
           {plan.entities.length.toLocaleString()} entidades ·{" "}
-          {plan.layers.length} capas · {savedModel.levels.length} niveles
+          {plan.layers.length} capas · {plan.regions.length} {plan.regions.length===1?"vista":"vistas"}
         </span>
         <span role="status">
-          {message || "Edición CAD vinculada al modelo 3D"}
+          {message ||
+            (savedModel.review?.warnings.includes("cad-awaiting-units")
+              ? "CAD guardado · escala y plantas pendientes"
+              : "Edición CAD vinculada al modelo 3D")}
         </span>
       </footer>
     </div>

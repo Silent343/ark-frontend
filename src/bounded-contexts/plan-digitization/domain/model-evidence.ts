@@ -1,7 +1,18 @@
 import type { Blueprint } from "./entities/blueprint";
+import { validDrawingCorrespondences } from "./drawing-coordination";
+import { validCadNeural } from "./neural-plan";
 
 /** Source references are data, not claims of recognition accuracy or verified BIM. */
 export function validModelEvidence(plan: Blueprint): boolean {
+  if (!validDrawingCorrespondences(plan)) return false;
+  if (plan.cad && !validCadNeural(plan.cad)) return false;
+  const views = ["plan", "section", "elevation", "schedule", "detail"];
+  if (
+    [...(plan.cad?.regions ?? []), ...(plan.sheets ?? [])].some(
+      (r) => r.viewType !== undefined && !views.includes(r.viewType),
+    )
+  )
+    return false;
   if (
     plan.intent !== undefined &&
     !["visualization", "coordination", "bim-preparation"].includes(plan.intent)
@@ -86,6 +97,7 @@ export function validModelEvidence(plan: Blueprint): boolean {
         "closed-contour",
         "treads",
         "cad-text",
+        "neural-mask",
       ].includes(e.method) &&
       Array.isArray(e.sourceIds) &&
       e.sourceIds.length <= 500 &&

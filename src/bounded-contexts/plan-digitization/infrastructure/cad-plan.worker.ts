@@ -3,12 +3,31 @@ import {
   type CadDrawingPreview,
   type CadShape,
 } from "./cad-plan-geometry";
+import {
+  resolveCadExternalReferences,
+  cadReferenceName,
+} from "./cad-external-references";
+import type { CadDocument } from "@node-projects/acad-ts";
 
 const MAX_SIDE = 3000;
 let drawing: CadDrawingPreview | null = null;
+let currentDocument: CadDocument | null = null;
+let availableReferences = new Set<string>();
+const referenceDocuments = new Map<string, CadDocument>();
 
 type Request =
-  | { id: number; type: "load"; bytes: ArrayBuffer; format: "dwg" | "dxf" }
+  | {
+      id: number;
+      type: "load";
+      bytes: ArrayBuffer;
+      format: "dwg" | "dxf";
+      availableReferences?: string[];
+    }
+  | {
+      id: number;
+      type: "references";
+      references: Array<{ name: string; format: string; bytes: ArrayBuffer }>;
+    }
   | { id: number; type: "render"; visibleLayers: string[] };
 
 function boundsOf(shapes: CadShape[], visible: Set<string>) {
@@ -115,20 +134,54 @@ function renderCad(visibleLayers: string[]) {
 self.onmessage = async (event: MessageEvent<Request>) => {
   const request = event.data;
   try {
-    if (request.type === "load") {
-      const bytes = new Uint8Array(request.bytes);
-      if (bytes.length > 12 * 1024 * 1024)
-        throw new Error("Máximo 12 MB por archivo CAD.");
+    if (request.type === "load" || request.type === "references") {
       // Use the library's own prebundled ESM to avoid a Turbopack cycle in its source exports.
       const moduleUrl = "/vendor/plan-tools/acad.bundle.js";
       const cad = (await import(
         /* webpackIgnore: true */ moduleUrl
       )) as typeof import("@node-projects/acad-ts");
-      const document =
-        request.format === "dwg"
-          ? cad.DwgReader.readFromStream(request.bytes)
-          : cad.DxfReader.readFromStream(bytes);
-      drawing = extractCadDrawing(document, cad);
+      if (request.type === "load") {
+        if (request.bytes.byteLength > 32 * 1024 * 1024)
+          throw new Error("Máximo 32 MB por archivo CAD.");
+        currentDocument =
+          request.format === "dwg"
+            ? cad.DwgReader.readFromStream(request.bytes)
+            : cad.DxfReader.readFromStream(new Uint8Array(request.bytes));
+        availableReferences = new Set(request.availableReferences ?? []);
+        referenceDocuments.clear();
+      } else {
+        for (const ref of request.references) {
+          if (ref.bytes.byteLength > 32 * 1024 * 1024)
+            throw new Error("Máximo 32 MB por referencia CAD.");
+          referenceDocuments.set(
+            cadReferenceName(ref.name),
+            ref.format === "dwg"
+              ? cad.DwgReader.readFromStream(ref.bytes)
+              : cad.DxfReader.readFromStream(new Uint8Array(ref.bytes)),
+          );
+        }
+      }
+      if (!currentDocument)
+        throw new Error("Carga primero la lámina CAD principal.");
+      const missing = resolveCadExternalReferences(currentDocument, (name) =>
+        referenceDocuments.get(name),
+      );
+      if (missing.length) {
+        const unavailable = missing.filter(
+          (name) => !availableReferences.has(name),
+        );
+        if (unavailable.length)
+          throw new Error(
+            `Faltan referencias CAD: ${unavailable.join(", ")}. Selecciona la lámina y sus archivos base juntos.`,
+          );
+        self.postMessage({
+          id: request.id,
+          type: "references",
+          references: missing,
+        });
+        return;
+      }
+      drawing = extractCadDrawing(currentDocument, cad);
       const visibleLayers = drawing.layers
         .filter((layer) => layer.visible)
         .map((layer) => layer.name);

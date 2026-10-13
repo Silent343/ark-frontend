@@ -48,6 +48,7 @@ export interface CadBounds {
 }
 /** A plan view is positioned independently from elevations and sections on the same CAD sheet. */
 export interface CadRegion extends CadBounds {
+  viewType?: import("../drawing-coordination").DrawingView;
   id: string;
   name: string;
   elevation: number;
@@ -63,6 +64,7 @@ export interface CadRegion extends CadBounds {
   alignment?: { x: number; y: number };
 }
 export interface CadPlan {
+  neural?: import("../neural-plan").CadNeuralAnalysis[];
   sourceName: string;
   entities: CadEntity[];
   layers: CadLayer[];

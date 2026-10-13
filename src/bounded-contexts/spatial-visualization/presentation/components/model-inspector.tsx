@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ArrowUpRight, Search, Scan, X } from "lucide-react";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
 import { modelIntegrityIssues } from "@/bounded-contexts/plan-digitization/domain/model-integrity";
+import { resolveDrawingCorrespondences } from "@/bounded-contexts/plan-digitization/domain/drawing-coordination";
+import { modelDetectionExport } from "@/bounded-contexts/plan-digitization/domain/detection-sample";
 import {
   inspectModel,
   modelReadiness,
@@ -13,16 +15,31 @@ export function ModelInspector({
   plan,
   selectedId,
   onSelect,
+  sourcePlan = plan,
 }: {
   plan: Blueprint;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  sourcePlan?: Blueprint;
 }) {
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState("");
   const elements = useMemo(() => inspectModel(plan), [plan]);
   const checks = useMemo(() => modelReadiness(plan), [plan]);
   const issues = useMemo(() => modelIntegrityIssues(plan), [plan]);
+  const correspondence = useMemo(
+    () => resolveDrawingCorrespondences(sourcePlan),
+    [sourcePlan],
+  );
+  const applied = (id: string, property: string) =>
+    sourcePlan.correspondences?.some(
+      (r) =>
+        r.targetId === id &&
+        r.property === property &&
+        correspondence.results.some(
+          (s) => s.id === r.id && s.status === "applied",
+        ),
+    );
   const selected = elements.find((e) => e.id === selectedId);
   const evidence = selected ? plan.elementEvidence?.[selected.id] : undefined;
   const sourceId = evidence?.sourceIds[0];
@@ -34,6 +51,18 @@ export function ModelInspector({
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
+  function exportPredictions() {
+    const blob = new Blob(
+      [JSON.stringify(modelDetectionExport(sourcePlan), null, 2)],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob),
+      a = document.createElement("a");
+    a.href = url;
+    a.download = `ark-detecciones-${plan.projectId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
   return (
     <section
       className="model-inspector-panel"
@@ -48,11 +77,44 @@ export function ModelInspector({
         Selecciona un elemento en el 3D o búscalo aquí para revisar sus medidas
         y su origen.
       </p>
+      {plan.cad && (
+        <Link className="pm-button" href={`${editor}&panel=recognition`}>
+          Reconocimiento con IA
+        </Link>
+      )}
+      <Link
+        className="pm-button"
+        href={`${editor}&panel=coordination${selectedId ? `&target=${encodeURIComponent(selectedId)}` : ""}`}
+      >
+        Vincular plantas, cortes y cuadros
+      </Link>
+      {!!correspondence.results.length && (
+        <p className="model-inspector-help">
+          {correspondence.results.filter((r) => r.status === "applied").length}{" "}
+          medidas vinculadas ·{" "}
+          {correspondence.results.filter((r) => r.status !== "applied").length}{" "}
+          por revisar
+        </p>
+      )}
       {(plan.cad ? !plan.cad.unitConfirmed : !plan.calibration) && (
         <p className="model-metric-warning">
           Medidas provisionales: falta confirmar la escala del plano.
         </p>
       )}
+      {plan.cad &&
+        (!plan.cad.regions.some(
+          (r) => r.enabled && (!r.viewType || r.viewType === "plan"),
+        ) ||
+          plan.review?.warnings.includes("cad-awaiting-units")) && (
+          <p className="model-metric-warning">
+            CAD importado, pendiente de preparar el modelo. En «Vistas»,
+            confirma las unidades, delimita las plantas y selecciona cuáles
+            incluir en 3D.{" "}
+            <Link href={`${editor}&panel=levels`}>
+              Revisar plantas y escala
+            </Link>
+          </p>
+        )}
       {selected ? (
         <div className="model-element-card">
           {issues
@@ -89,11 +151,15 @@ export function ModelInspector({
                   })}{" "}
                   m{" "}
                   <small>
-                    {evidence
-                      ? evidence.assumed.includes(d.property)
-                        ? "Por confirmar"
-                        : "Del plano / ajuste"
-                      : "Sin evidencia registrada"}
+                    {applied(selected.id, d.property)
+                      ? "Cota vinculada y confirmada"
+                      : evidence
+                        ? evidence.assumed.includes(d.property)
+                          ? "Por confirmar"
+                          : evidence.method === "neural-mask"
+                            ? "Propuesta CAD + IA"
+                            : "Del plano / ajuste"
+                        : "Sin evidencia registrada"}
                   </small>
                 </dd>
               </div>
@@ -214,6 +280,25 @@ export function ModelInspector({
         )}
         {!results.length && <p>No hay elementos con ese filtro.</p>}
       </div>
+      <details className="model-review-checks">
+        <summary>Evaluación del reconocimiento</summary>
+        <p>
+          Exporta las propuestas por planta para compararlas con anotaciones
+          independientes. El número de objetos no indica exactitud.
+        </p>
+        <button
+          type="button"
+          className="pm-button"
+          onClick={exportPredictions}
+          disabled={
+            sourcePlan.cad
+              ? !sourcePlan.cad.unitConfirmed
+              : !sourcePlan.calibration
+          }
+        >
+          Exportar detecciones
+        </button>
+      </details>
     </section>
   );
 }

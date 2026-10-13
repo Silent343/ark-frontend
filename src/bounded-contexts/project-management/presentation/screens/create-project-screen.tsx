@@ -20,7 +20,7 @@ import { ProjectCoverField } from "../components/project-cover-field";
 import { planDigitization } from "@/bounded-contexts/plan-digitization/public";
 import { loadCadPlanSource } from "@/bounded-contexts/plan-digitization/infrastructure/browser-cad-source";
 import { createCadPlan } from "@/bounded-contexts/plan-digitization/domain/cad-operations";
-import { compileCadModel } from "@/bounded-contexts/plan-digitization/infrastructure/compile-cad-model";
+import { stageCadBlueprint } from "@/bounded-contexts/plan-digitization/domain/cad-reconstruction";
 
 type IntakeFile = { file: File; discipline: string; view: string };
 const fileKey = (file: File) =>
@@ -75,6 +75,7 @@ export function CreateProjectScreen() {
   const router = useRouter();
   const [form, setForm] = useState(initialForm);
   const [files, setFiles] = useState<IntakeFile[]>([]);
+  const [principalCad, setPrincipalCad] = useState("");
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
   const [workspaceReady, setWorkspaceReady] = useState(false);
@@ -93,15 +94,16 @@ export function CreateProjectScreen() {
       known.add(key);
       return true;
     });
-    if ([...files.map((f) => f.file), ...incoming].filter(isCad).length > 1) {
+    if (
+      files.length + incoming.length > 32 ||
+      [...files.map((f) => f.file), ...incoming].reduce(
+        (n, f) => n + f.size,
+        0,
+      ) >
+        128 * 1024 * 1024
+    ) {
       setError(
-        "Elige un CAD editable principal. Puedes acompañarlo de plantas, cortes y detalles en PDF o imagen.",
-      );
-      return;
-    }
-    if (files.length + incoming.length > 12) {
-      setError(
-        "Puedes agregar hasta 12 archivos. Agrupa las láminas relacionadas en un PDF.",
+        "Puedes agregar hasta 32 archivos relacionados, con un total máximo de 128 MB.",
       );
       return;
     }
@@ -109,7 +111,7 @@ export function CreateProjectScreen() {
       (f) =>
         !f.size ||
         (isCad(f)
-          ? f.size > 12 * 1024 * 1024
+          ? f.size > 32 * 1024 * 1024
           : ![
               "image/png",
               "image/jpeg",
@@ -119,7 +121,7 @@ export function CreateProjectScreen() {
     );
     if (invalid) {
       setError(
-        `${invalid.name}: usa un DWG/DXF de hasta 12 MB o un PDF, PNG, JPG o WebP de hasta 3 MB.`,
+        `${invalid.name}: usa un DWG/DXF de hasta 32 MB o un PDF, PNG, JPG o WebP de hasta 3 MB.`,
       );
       return;
     }
@@ -149,12 +151,22 @@ export function CreateProjectScreen() {
     setError("");
     let source: Awaited<ReturnType<typeof loadCadPlanSource>> | undefined;
     try {
-      const cadFile = files.find(
-        (f) => isCad(f.file) && !uploadedKeys.includes(fileKey(f.file)),
-      );
+      const principal =
+        files.find((f) => isCad(f.file) && fileKey(f.file) === principalCad) ??
+        files.find((f) => isCad(f.file));
+      const cadFile =
+        principal && !uploadedKeys.includes(fileKey(principal.file))
+          ? principal
+          : undefined;
       if (cadFile) {
         setStatus("Comprobando el archivo CAD…");
-        source = await loadCadPlanSource(cadFile.file);
+        source = await loadCadPlanSource(
+          cadFile.file,
+          undefined,
+          files
+            .filter((f) => isCad(f.file) && f !== cadFile)
+            .map((f) => f.file),
+        );
         if (!source.cad)
           throw new Error(
             "No se pudo interpretar el CAD. Revisa el formato del archivo.",
@@ -183,6 +195,7 @@ export function CreateProjectScreen() {
         if (uploaded.has(key)) continue;
         setStatus(`Preparando ${file.name}…`);
         if (isCad(file)) {
+          if (item !== cadFile) continue;
           const base = await planDigitization.getBlueprint.execute(project.id);
           const cad = createCadPlan(
             file.name,
@@ -190,8 +203,9 @@ export function CreateProjectScreen() {
             source!.cad!.layers,
             source!.cad!.skipped,
           );
+          cad.regions = cad.regions.map((r) => ({ ...r, enabled: false }));
           await planDigitization.saveBlueprint.execute(
-            await compileCadModel(base, cad, 2.8),
+            stageCadBlueprint(base, cad, 2.8),
           );
         } else {
           await documents.create(project.id, {
@@ -365,6 +379,33 @@ export function CreateProjectScreen() {
                 Elegir archivos
               </label>
             </div>
+            {files.filter((f) => isCad(f.file)).length > 1 && (
+              <Field label="CAD principal del proyecto">
+                <select
+                  value={
+                    files.some(
+                      (f) => isCad(f.file) && fileKey(f.file) === principalCad,
+                    )
+                      ? principalCad
+                      : fileKey(files.find((f) => isCad(f.file))!.file)
+                  }
+                  onChange={(e) => setPrincipalCad(e.target.value)}
+                >
+                  {files
+                    .filter((f) => isCad(f.file))
+                    .map((f) => (
+                      <option key={fileKey(f.file)} value={fileKey(f.file)}>
+                        {f.file.name}
+                      </option>
+                    ))}
+                </select>
+                <small>
+                  Los otros CAD se usan para resolver referencias externas del
+                  principal. Para añadir cortes independientes como documentos,
+                  adjúntalos en PDF o imagen.
+                </small>
+              </Field>
+            )}
             {!!files.length && (
               <div className="intake-files">
                 {files.map((item, index) => (
@@ -376,7 +417,7 @@ export function CreateProjectScreen() {
                         <small>
                           {(item.file.size / 1024 / 1024).toFixed(1)} MB ·{" "}
                           {isCad(item.file)
-                            ? "CAD editable principal"
+                            ? "CAD · principal o referencia externa"
                             : "Documento de referencia"}
                         </small>
                       </span>
@@ -445,9 +486,9 @@ export function CreateProjectScreen() {
             <details className="intake-format-help">
               <summary>Cómo preparar los archivos</summary>
               <p>
-                Un CAD principal de hasta 12 MB, con varias plantas si las
-                contiene. Hasta 12 archivos en total; PDF e imágenes de hasta 3
-                MB cada uno.
+                Un CAD principal de hasta 32 MB, con sus archivos base si usa
+                referencias externas. Hasta 32 archivos en total; PDF e imágenes
+                de hasta 3 MB cada uno.
               </p>
               <p>
                 Para analizar una imagen, usa una planta legible vista desde

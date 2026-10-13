@@ -1,4 +1,7 @@
-import { compileCadBlueprint } from "../domain/cad-reconstruction";
+import {
+  compileCadBlueprint,
+  stageCadBlueprint,
+} from "../domain/cad-reconstruction";
 import type { Blueprint } from "../domain/entities/blueprint";
 import type { CadPlan } from "../domain/entities/cad-plan";
 import { enrichCadEvidence, detectCadRegions } from "../domain/cad-operations";
@@ -20,7 +23,13 @@ self.onmessage = (
       )
         cad.regions = detectCadRegions(cad, height);
     }
-    self.postMessage({ blueprint: compileCadBlueprint(base, cad, height) });
+    self.postMessage({
+      blueprint:
+        !cad.unitConfirmed &&
+        base.review?.warnings.includes("cad-awaiting-units")
+          ? stageCadBlueprint(base, cad, height)
+          : compileCadBlueprint(base, cad, height),
+    });
   } catch (error) {
     self.postMessage({
       error:

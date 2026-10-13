@@ -1,6 +1,7 @@
 import type { PlanReview } from "../domain/entities/blueprint";
 import type { RasterPlan } from "./browser-plan-source";
 import type { CadEntity } from "../domain/entities/cad-plan";
+import { cadReferenceName } from "./cad-external-references";
 
 interface CadLayer {
   name: string;
@@ -9,7 +10,8 @@ interface CadLayer {
 }
 interface CadWorkerResponse {
   id: number;
-  type: "loaded" | "rendered" | "error";
+  type: "loaded" | "rendered" | "error" | "references";
+  references?: string[];
   message?: string;
   bitmap?: ImageBitmap;
   width?: number;
@@ -25,7 +27,26 @@ interface CadWorkerResponse {
 export async function loadCadPlanSource(
   file: File,
   signal?: AbortSignal,
+  relatedFiles: File[] = [],
 ): Promise<RasterPlan> {
+  const lookup = new Map<string, File>();
+  if (
+    relatedFiles.length + 1 > 32 ||
+    relatedFiles.reduce((n, f) => n + f.size, file.size) > 128 * 1024 * 1024
+  )
+    throw new Error(
+      "Selecciona hasta 32 CAD relacionados, con un total máximo de 128 MB.",
+    );
+  if ([file, ...relatedFiles].some((f) => f.size > 32 * 1024 * 1024))
+    throw new Error("Máximo 32 MB por archivo CAD.");
+  for (const related of relatedFiles) {
+    const key = cadReferenceName(related.name);
+    if (lookup.has(key))
+      throw new Error(
+        `Hay dos referencias con el mismo nombre: ${related.name}.`,
+      );
+    lookup.set(key, related);
+  }
   const worker = new Worker(new URL("./cad-plan.worker.ts", import.meta.url), {
     type: "module",
   });
@@ -89,14 +110,37 @@ export async function loadCadPlanSource(
   };
   try {
     const bytes = await file.arrayBuffer();
-    const response = await send(
+    let response = await send(
       {
         type: "load",
         bytes,
         format: /\.dxf$/i.test(file.name) ? "dxf" : "dwg",
+        availableReferences: [...lookup.keys()],
       },
       [bytes],
     );
+    for (let depth = 0; response.type === "references"; depth++) {
+      if (depth >= 8)
+        throw new Error("La cadena de referencias CAD supera ocho niveles.");
+      const selected = (response.references ?? []).map((name) =>
+        lookup.get(cadReferenceName(name)),
+      );
+      if (selected.some((f) => !f))
+        throw new Error(
+          `Faltan referencias CAD: ${(response.references ?? []).join(", ")}. Selecciona la lámina y sus archivos base juntos.`,
+        );
+      const references = await Promise.all(
+        selected.map(async (f) => ({
+          name: cadReferenceName(f!.name),
+          format: /\.dxf$/i.test(f!.name) ? "dxf" : "dwg",
+          bytes: await f!.arrayBuffer(),
+        })),
+      );
+      response = await send(
+        { type: "references", references },
+        references.map((r) => r.bytes),
+      );
+    }
     const canvas = toCanvas(response);
     return {
       canvas,

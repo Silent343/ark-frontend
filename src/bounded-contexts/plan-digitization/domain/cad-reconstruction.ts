@@ -6,6 +6,7 @@ import type {
   CadRole,
 } from "./entities/cad-plan";
 import { cadEntityBounds, cadBounds } from "./cad-operations";
+import { cadNeuralSignature } from "./neural-plan";
 import {
   fixtureKind,
   blockRole,
@@ -383,6 +384,26 @@ export function stairFlights(entities: CadEntity[], units: number) {
   return flights;
 }
 
+/** Import first, reconstruct after confirming units. Never extrude a whole large package at guessed scale. */
+export function stageCadBlueprint(
+  base: Blueprint,
+  cad: CadPlan,
+  height = 2.8,
+): Blueprint {
+  const staged = compileCadBlueprint(base, { ...cad, regions: [] }, height);
+  return {
+    ...staged,
+    cad,
+    levels: staged.levels.map((l) =>
+      l.id === "level-1" ? { ...l, name: "Pendiente de escala y plantas" } : l,
+    ),
+    review: {
+      ...staged.review!,
+      warnings: ["cad-semantic-review", "cad-awaiting-units"],
+    },
+  };
+}
+
 /** One calibrated model is compiled from evidence shared by 2D and 3D. Source CAD entities remain untouched. */
 export function compileCadBlueprint(
   base: Blueprint,
@@ -396,7 +417,7 @@ export function compileCadBlueprint(
       ? "reference"
       : (e.role ?? roles.get(e.layer));
   const plans = cad.regions
-    .filter((r) => r.enabled)
+    .filter((r) => r.enabled && (!r.viewType || r.viewType === "plan"))
     .map((region) => {
       const entities = cad.entities.filter((e) => inRegion(e, region));
       const raw = linesOf(
@@ -410,16 +431,31 @@ export function compileCadBlueprint(
           units,
         ),
       ).filter((w) => w.paired && distance(w.a, w.b) > 1.3);
+      const neural = cad.unitConfirmed
+        ? cad.neural?.find(
+            (a) =>
+              a.regionId === region.id &&
+              a.applied &&
+              a.sourceSignature === cadNeuralSignature(cad, region) &&
+              a.walls.length > 0,
+          )
+        : undefined;
       return {
         region,
         entities,
         raw,
         structural,
-        walls: mergeLines(
-          [...reconstructWalls(raw), ...structural],
-          0.06,
-          0.025,
-        ),
+        neural,
+        walls: neural
+          ? neural.walls.map((w, i) => ({
+              a: [w.a[0] * units, w.a[1] * units] as Point2,
+              b: [w.b[0] * units, w.b[1] * units] as Point2,
+              thickness: w.thickness,
+              source: w.sourceIds?.[0] ?? `neural-${i}`,
+              sourceIds: w.sourceIds ?? [],
+              paired: false,
+            }))
+          : mergeLines([...reconstructWalls(raw), ...structural], 0.06, 0.025),
         center: [
           ((region.minX + region.maxX) * units) / 2,
           ((region.minY + region.maxY) * units) / 2,
@@ -436,7 +472,9 @@ export function compileCadBlueprint(
     sourceImage: undefined,
     sourceSize: undefined,
     sourceOffset: undefined,
-    sheets: [],
+    sheets: (base.sheets ?? []).filter(
+      (s) => s.viewType && s.viewType !== "plan",
+    ),
     rooms: [],
     walls: [],
     doors: [],
@@ -472,7 +510,7 @@ export function compileCadBlueprint(
       warnings: ["cad-semantic-review"],
     },
     reconstruction: {
-      version: 4,
+      version: 6,
       pairedWalls: 0,
       sourceEdges: plans.reduce((n, p) => n + p.raw.length, 0),
       alignedPlans: 0,
@@ -488,6 +526,13 @@ export function compileCadBlueprint(
     next.levels = [
       { id: "level-1", name: "Sin plantas asignadas", elevation: 0 },
     ];
+    for (const sheet of next.sheets ?? []) {
+      const level = base.levels.find((l) => l.id === sheet.levelId);
+      if (level && !next.levels.some((l) => l.id === level.id))
+        next.levels.push(level);
+      next.width = Math.max(next.width, sheet.x + sheet.width);
+      next.height = Math.max(next.height, sheet.y + sheet.height);
+    }
     return next;
   }
   // Read NPT only during detection; user-edited region elevations always remain authoritative here.
@@ -823,7 +868,11 @@ export function compileCadBlueprint(
             ...(wall.sourceIds ?? [wall.source]),
             ...(notes[0] ? [notes[0].id] : []),
           ],
-          wall.paired ? "paired-faces" : "cad-symbol",
+          plan.neural
+            ? "neural-mask"
+            : wall.paired
+              ? "paired-faces"
+              : "cad-symbol",
           [
             ...(!wall.paired ? ["thickness"] : []),
             ...(!notes[0] && (terrace || heightSource !== "manual")
@@ -1032,5 +1081,14 @@ export function compileCadBlueprint(
     }
   }
   next.levels.sort((a, b) => a.elevation - b.elevation);
+  // Reference pages survive CAD rebuilding, including their source-level identity.
+  for (const sheet of next.sheets ?? []) {
+    if (!next.levels.some((l) => l.id === sheet.levelId)) {
+      const level = base.levels.find((l) => l.id === sheet.levelId);
+      if (level) next.levels.push(level);
+    }
+    next.width = Math.max(next.width, sheet.x + sheet.width);
+    next.height = Math.max(next.height, sheet.y + sheet.height);
+  }
   return next;
 }

@@ -1,5 +1,7 @@
 # Plano → modelo: revisión trazable
 
+La fase posterior, con reconstrucción v5, correspondencias de cotas entre vistas y evaluación reproducible del detector, se documenta en [Detección evaluable y correspondencia entre vistas](detector-evaluation-and-correspondence.md). Este documento conserva el alcance y las comprobaciones de la etapa v4.
+
 ## Alcance de esta actualización
 
 Se aplica la separación entre evidencia documental, interpretación geométrica y presentación descrita en la investigación de Ark del 13 de octubre de 2026. Esta implementación sigue siendo heurística: no incorpora un detector neuronal entrenado ni certifica un modelo BIM.
@@ -40,11 +42,11 @@ La revisión del modelo identifica muros degenerados, anfitriones ausentes o de 
 
 Prueba local de la reconstrucción v4, 13 de octubre de 2026:
 
-| Archivo | Niveles interpretados | Muros | Mobiliario/equipo propuesto | Objetos con referencia CAD |
-| --- | ---: | ---: | ---: | ---: |
-| rt02.dwg | 1 | 117 | 141 | 276 |
-| cs06.dwg | 3 | 201 | 37 | 284 |
-| au_04.dwg | 1 | 94 | 238 | 355 |
+| Archivo   | Niveles interpretados | Muros | Mobiliario/equipo propuesto | Objetos con referencia CAD |
+| --------- | --------------------: | ----: | --------------------------: | -------------------------: |
+| rt02.dwg  |                     1 |   117 |                         141 |                        276 |
+| cs06.dwg  |                     3 |   201 |                          37 |                        284 |
+| au_04.dwg |                     1 |    94 |                         238 |                        355 |
 
 Las referencias resultaron resolubles y los controles geométricos implementados no encontraron conflictos en esos tres resultados. Las alturas de todos sus niveles siguen pendientes de confirmación. Estos conteos **no son métricas de exactitud, cobertura ni reconocimiento correcto**: todavía no existe una anotación independiente del edificio para calcularlas.
 
