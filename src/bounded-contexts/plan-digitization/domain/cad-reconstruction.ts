@@ -450,6 +450,7 @@ export function compileCadBlueprint(
     slabs: [],
     floorDetails: [],
     levels: [],
+    elementEvidence: {},
     width: 4000,
     height: 4000,
     scale: `${units} m / unidad CAD`,
@@ -471,7 +472,7 @@ export function compileCadBlueprint(
       warnings: ["cad-semantic-review"],
     },
     reconstruction: {
-      version: 3,
+      version: 4,
       pairedWalls: 0,
       sourceEdges: plans.reduce((n, p) => n + p.raw.length, 0),
       alignedPlans: 0,
@@ -479,6 +480,8 @@ export function compileCadBlueprint(
       fixtureCount: 0,
       unresolvedSymbols: 0,
       inferredLayers: cad.layers.filter((l) => l.inferred).map((l) => l.name),
+      unmatchedOpenings: 0,
+      unregisteredRegions: [],
     },
   };
   if (!reference) {
@@ -509,11 +512,34 @@ export function compileCadBlueprint(
             reference.walls,
             sub(reference.center, plan.center),
           );
-    if (registration.matched) next.reconstruction!.alignedPlans++;
+    // A manual correction is relative to the automatic registration, in metres.
+    if (region.alignment) {
+      registration.offset = [
+        registration.offset[0] + region.alignment.x,
+        registration.offset[1] + region.alignment.y,
+      ];
+    }
+    if (registration.matched || region.alignment)
+      next.reconstruction!.alignedPlans++;
+    else next.reconstruction!.unregisteredRegions!.push(region.id);
     const toPlan = (p: Point2): Point2 => [
       2000 + (p[0] + registration.offset[0] - reference.center[0]) * PX,
       2000 - (p[1] + registration.offset[1] - reference.center[1]) * PX,
     ];
+    const record = (
+      id: string,
+      sourceIds: string[],
+      method: import("./entities/blueprint").ElementEvidence["method"],
+      assumed: string[],
+    ) => {
+      next.elementEvidence![id] = {
+        sourceName: cad.sourceName,
+        regionId: region.id,
+        sourceIds: [...new Set(sourceIds)].slice(0, 500),
+        method,
+        assumed,
+      };
+    };
     let walls = plan.walls.map((w) => ({
       ...w,
       a: [...w.a] as Point2,
@@ -605,6 +631,8 @@ export function compileCadBlueprint(
       )
         proposals.push({ group, match });
     }
+    next.reconstruction!.unmatchedOpenings! +=
+      openingGroups.length - proposals.length;
     const labels = entities.filter(
       (e): e is Extract<CadEntity, { kind: "text" }> => e.kind === "text",
     );
@@ -723,11 +751,23 @@ export function compileCadBlueprint(
       const levelId = `${region.id}-${floor}`,
         entry = levels.findIndex((l) => l.plan === plan && l.floor === floor),
         elevation = levels[entry].elevation;
-      const nextElevation = levels[entry + 1]?.elevation,
-        height =
-          nextElevation !== undefined
-            ? Math.max(2.2, Math.min(6, nextElevation - elevation))
-            : defaultHeight;
+      const upper = levels[entry + 1];
+      const measuredHeight =
+        upper &&
+        upper.elevation > elevation &&
+        region.elevationSource &&
+        upper.plan.region.elevationSource;
+      const storeyRise =
+        upper && upper.elevation > elevation
+          ? upper.elevation - elevation
+          : defaultHeight;
+      const height = region.wallHeight ?? storeyRise;
+      const heightSource =
+        region.wallHeight !== undefined
+          ? "manual"
+          : measuredHeight
+            ? "levels"
+            : "assumed";
       const terrace = /TERRAZA|AZOTEA/.test(normalize(region.name));
       const floorNumber = Number(region.name.match(/\d+/)?.[0]);
       next.levels.push({
@@ -738,6 +778,7 @@ export function compileCadBlueprint(
             : region.name,
         elevation,
         height,
+        heightSource,
       });
       const wallIds = new Map(walls.map((w, i) => [w, `wall-${levelId}-${i}`]));
       for (const wall of walls) {
@@ -753,6 +794,7 @@ export function compileCadBlueprint(
                   {
                     point: [e.x * units, e.y * units] as Point2,
                     height: Number(match[1].replace(",", ".")),
+                    id: e.id,
                   },
                 ]
               : [];
@@ -766,7 +808,7 @@ export function compileCadBlueprint(
           .sort(
             (a, b) => lineDistance(a.point, wall) - lineDistance(b.point, wall),
           );
-        if (notes[0]) wallHeight = Math.min(height, notes[0].height);
+        if (notes[0]) wallHeight = notes[0].height;
         next.walls.push({
           id: wallIds.get(wall)!,
           levelId,
@@ -775,9 +817,35 @@ export function compileCadBlueprint(
           thickness: wall.thickness * PX,
           height: wallHeight,
         });
+        record(
+          wallIds.get(wall)!,
+          [
+            ...(wall.sourceIds ?? [wall.source]),
+            ...(notes[0] ? [notes[0].id] : []),
+          ],
+          wall.paired ? "paired-faces" : "cad-symbol",
+          [
+            ...(!wall.paired ? ["thickness"] : []),
+            ...(!notes[0] && (terrace || heightSource !== "manual")
+              ? ["height"]
+              : []),
+            "material",
+          ],
+        );
         if (wall.paired) next.reconstruction!.pairedWalls++;
       }
+      const hosts = new Map(
+        next.walls.filter((w) => w.levelId === levelId).map((w) => [w.id, w]),
+      );
       for (const { group, match } of proposals) {
+        const host = hosts.get(wallIds.get(match.wall)!);
+        if (!host || host.height < 0.5) {
+          next.reconstruction!.unmatchedOpenings!++;
+          continue;
+        }
+        const availableHeight = host.height - 0.05;
+        const sill =
+          group.role === "door" ? 0 : Math.min(0.9, availableHeight / 2);
         const [x, y] = toPlan(match.center),
           u = direction(match.wall);
         const opening: Opening = {
@@ -788,10 +856,24 @@ export function compileCadBlueprint(
           y,
           width: match.width * PX,
           rotation: (-Math.atan2(u[1], u[0]) * 180) / Math.PI,
-          height: group.role === "door" ? Math.min(2.1, height - 0.2) : 1.2,
-          sillHeight: group.role === "door" ? 0 : 0.9,
+          height: Math.min(
+            group.role === "door" ? 2.1 : 1.2,
+            availableHeight - sill,
+          ),
+          sillHeight: sill,
         };
         (group.role === "door" ? next.doors : next.windows).push(opening);
+        record(
+          opening.id,
+          group.entities.map((e) => e.id),
+          "cad-symbol",
+          [
+            "height",
+            ...(group.role === "window" ? ["sillHeight"] : []),
+            "type",
+            "material",
+          ],
+        );
       }
       for (const [i, surface] of floorSurfaces.surfaces.entries()) {
         const stairHoles = flights
@@ -813,6 +895,12 @@ export function compileCadBlueprint(
           holes: [...surface.holes, ...stairHoles].map((h) => h.map(toPlan)),
           thickness: 0.18,
         });
+        record(
+          `slab-${levelId}-${i}`,
+          plan.raw.flatMap((l) => l.sourceIds ?? [l.source]),
+          "closed-contour",
+          ["thickness", "material"],
+        );
       }
       for (const [i, room] of floorSurfaces.rooms.entries()) {
         const points = room.polygon.map(toPlan),
@@ -840,8 +928,14 @@ export function compileCadBlueprint(
           size: box.width * PX,
           depth: box.depth * PX,
           rotation: (-box.angle * 180) / Math.PI,
-          height,
+          height: storeyRise,
         });
+        record(
+          `column-${levelId}-${i}`,
+          entities.filter((e) => roleOf(e) === "column").map((e) => e.id),
+          "closed-contour",
+          ["height", "material"],
+        );
       }
       for (const [i, polygon] of roofContours.entries()) {
         const points = polygon.map(toPlan),
@@ -858,6 +952,12 @@ export function compileCadBlueprint(
           thickness: 0.16,
           elevation: height,
         });
+        record(
+          `roof-${levelId}-${i}`,
+          entities.filter((e) => roleOf(e) === "roof").map((e) => e.id),
+          "closed-contour",
+          ["thickness", "elevation", "slope", "material"],
+        );
       }
       for (const [i, group] of installations.entries()) {
         const [x, y] = toPlan(orientedBox(group.points, 0).center);
@@ -894,10 +994,16 @@ export function compileCadBlueprint(
           rotation:
             (-(Math.PI / 2 + flight.angle + (second ? Math.PI : 0)) * 180) /
             Math.PI,
-          rise: paired ? height / 2 : height,
-          baseElevation: second ? height / 2 : 0,
+          rise: paired ? storeyRise / 2 : storeyRise,
+          baseElevation: second ? storeyRise / 2 : 0,
           stepCount: flight.steps,
         });
+        record(
+          `stair-${levelId}-${i}`,
+          entities.filter((e) => roleOf(e) === "stair").map((e) => e.id),
+          "treads",
+          [...(!measuredHeight ? ["rise"] : []), "type", "material"],
+        );
       });
       for (const [i, item] of fixtures.entries()) {
         const [x, y] = toPlan(item.center);
@@ -916,6 +1022,11 @@ export function compileCadBlueprint(
           sourceIds: item.sourceIds,
         });
         next.reconstruction!.fixtureCount!++;
+        record(`fixture-${levelId}-${i}`, item.sourceIds, "cad-symbol", [
+          "height",
+          "type",
+          "material",
+        ]);
       }
       next.floorDetails!.push({ levelId, segments: details });
     }

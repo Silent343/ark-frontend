@@ -4,6 +4,7 @@ import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import {
   BufferAttribute,
   BufferGeometry,
+  Color,
   ExtrudeGeometry,
   Object3D,
   Path,
@@ -36,11 +37,13 @@ function BoxBatch({
   material,
   onClick,
   shadows = true,
+  selectedId,
 }: {
   boxes: Box[];
   material: MeshStandardMaterialParameters;
   onClick?: (index: number) => void;
   shadows?: boolean;
+  selectedId?: string | null;
 }) {
   const mesh = useRef<InstancedMesh>(null),
     invalidate = useThree((s) => s.invalidate),
@@ -68,6 +71,27 @@ function BoxBatch({
     invalidate();
   }, [boxes, invalidate, gl]);
   /* eslint-enable react-hooks/immutability */
+  useLayoutEffect(() => {
+    if (!mesh.current || !selectedId) return;
+    boxes.forEach((box, i) =>
+      mesh.current!.setColorAt(
+        i,
+        new Color(box.id === selectedId ? "#44b8ff" : "#ffffff"),
+      ),
+    );
+    if (mesh.current.instanceColor)
+      mesh.current.instanceColor.needsUpdate = true;
+    invalidate();
+  }, [boxes, selectedId, invalidate]);
+  useLayoutEffect(() => {
+    if (mesh.current?.instanceColor && !selectedId) {
+      boxes.forEach((_, i) =>
+        mesh.current!.setColorAt(i, new Color("#ffffff")),
+      );
+      mesh.current.instanceColor.needsUpdate = true;
+      invalidate();
+    }
+  }, [boxes, selectedId, invalidate]);
   if (!boxes.length) return null;
   return (
     <instancedMesh
@@ -94,13 +118,27 @@ export function FloorSurfaces({
   plan,
   scene,
   elevation = 0,
+  selectedId,
+  onSelectElement,
 }: {
   plan: Blueprint;
   scene: Scene;
   elevation?: number;
+  selectedId?: string | null;
+  onSelectElement?: (id: string) => void;
 }) {
-  const geometry = useMemo(() => {
-    const parts = (plan.slabs ?? []).map((slab) => {
+  const { geometry, ranges } = useMemo(() => {
+    let vertices = 0,
+      faces = 0;
+    const ranges: Array<{
+      id: string;
+      start: number;
+      end: number;
+      faceStart: number;
+      faceEnd: number;
+    }> = [];
+    const parts: BufferGeometry[] = [];
+    for (const slab of plan.slabs ?? []) {
       const contour = (points: Array<[number, number]>, path: Shape | Path) => {
         points.forEach(([x, y], i) => {
           const px = (x - scene.centerX) / scene.scale,
@@ -124,21 +162,82 @@ export function FloorSurfaces({
         curveSegments: 1,
       });
       part.rotateX(Math.PI / 2);
-      return part;
-    });
+      const count = part.getAttribute("position").count;
+      const faceCount = (part.index?.count ?? count) / 3;
+      ranges.push({
+        id: slab.id,
+        start: vertices,
+        end: vertices + count,
+        faceStart: faces,
+        faceEnd: faces + faceCount,
+      });
+      vertices += count;
+      faces += faceCount;
+      parts.push(part);
+    }
     const merged = parts.length ? mergeGeometries(parts, false) : null;
     parts.forEach((p) => p.dispose());
-    return merged;
+    if (merged)
+      merged.setAttribute(
+        "color",
+        new BufferAttribute(new Float32Array(vertices * 3).fill(1), 3),
+      );
+    return { geometry: merged, ranges };
   }, [plan.slabs, scene.centerX, scene.centerY, scene.scale]);
   useEffect(() => () => geometry?.dispose(), [geometry]);
+  const invalidate = useThree((s) => s.invalidate);
+  useLayoutEffect(() => {
+    if (!geometry) return;
+    const colors = geometry.getAttribute("color");
+    const white = new Color("#ffffff"),
+      blue = new Color("#44b8ff");
+    for (const range of ranges) {
+      const color = range.id === selectedId ? blue : white;
+      for (let i = range.start; i < range.end; i++)
+        colors.setXYZ(i, color.r, color.g, color.b);
+    }
+    colors.needsUpdate = true;
+    invalidate();
+  }, [geometry, ranges, selectedId, invalidate]);
   return geometry ? (
-    <mesh geometry={geometry} position-y={elevation} castShadow receiveShadow>
-      <meshStandardMaterial color="#c9c9c3" roughness={0.92} />
+    <mesh
+      geometry={geometry}
+      position-y={elevation}
+      castShadow
+      receiveShadow
+      onClick={
+        onSelectElement
+          ? (event) => {
+              const range = ranges.find(
+                (r) =>
+                  event.faceIndex != null &&
+                  event.faceIndex >= r.faceStart &&
+                  event.faceIndex < r.faceEnd,
+              );
+              if (range) {
+                event.stopPropagation();
+                onSelectElement(range.id);
+              }
+            }
+          : undefined
+      }
+    >
+      <meshStandardMaterial color="#c9c9c3" roughness={0.92} vertexColors />
     </mesh>
   ) : null;
 }
 
-function CadRoofs({ plan, scene }: { plan: Blueprint; scene: Scene }) {
+function CadRoofs({
+  plan,
+  scene,
+  selectedId,
+  onSelectElement,
+}: {
+  plan: Blueprint;
+  scene: Scene;
+  selectedId?: string | null;
+  onSelectElement?: (id: string) => void;
+}) {
   const roofs = useMemo(
     () =>
       (plan.roofs ?? []).map((r) => ({
@@ -174,6 +273,8 @@ function CadRoofs({ plan, scene }: { plan: Blueprint; scene: Scene }) {
           plan={plan}
           scene={scene}
           elevation={roof.elevation + roof.thickness}
+          selectedId={selectedId}
+          onSelectElement={onSelectElement}
         />
       ))}
     </>
@@ -221,7 +322,17 @@ const glassMaterial = {
 const doorMaterial = { color: "#a0907e", roughness: 0.8 };
 const slabMaterial = { color: "#c9c9c3", roughness: 0.92 };
 
-function Furnishings({ plan, scene }: { plan: Blueprint; scene: Scene }) {
+function Furnishings({
+  plan,
+  scene,
+  selectedId,
+  onSelectElement,
+}: {
+  plan: Blueprint;
+  scene: Scene;
+  selectedId?: string | null;
+  onSelectElement?: (id: string) => void;
+}) {
   const batches = useMemo(
     () =>
       buildFixtureParts(
@@ -245,6 +356,12 @@ function Furnishings({ plan, scene }: { plan: Blueprint; scene: Scene }) {
         <BoxBatch
           key={key}
           boxes={batches[key]}
+          selectedId={selectedId}
+          onClick={
+            onSelectElement
+              ? (i) => onSelectElement(batches[key][i].id)
+              : undefined
+          }
           material={{ color: finishes[key], roughness: 0.78 }}
         />
       ))}
@@ -260,6 +377,8 @@ function CadLevel({
   details,
   structural,
   showRoof,
+  selectedId,
+  onSelectElement,
 }: {
   plan: Blueprint;
   scene: Scene;
@@ -268,10 +387,13 @@ function CadLevel({
   details: boolean;
   structural: boolean;
   showRoof: boolean;
+  selectedId?: string | null;
+  onSelectElement?: (id: string) => void;
 }) {
   const [openDoors, setOpenDoors] = useState<Set<string>>(new Set());
   const batches = useMemo(() => {
     const walls: Box[] = scene.wallSegments.map((w) => ({
+      id: w.elementId,
       x: w.x,
       y: w.y,
       z: w.z,
@@ -281,6 +403,7 @@ function CadLevel({
       rotation: w.rotation,
     }));
     const columns: Box[] = plan.columns.map((c) => ({
+      id: c.id,
       x: (c.x - scene.centerX) / scene.scale,
       y: (c.height ?? 2.8) / 2,
       z: (c.y - scene.centerY) / scene.scale,
@@ -370,6 +493,7 @@ function CadLevel({
         const at = -length / 2 + ((i + 0.5) * length) / steps,
           h = ((i + 1) * rise) / steps;
         stairs.push({
+          id: stair.id,
           x: x + Math.sin(rotation) * at,
           y: base + h / 2,
           z: z + Math.cos(rotation) * at,
@@ -390,17 +514,46 @@ function CadLevel({
     }));
     return { walls, columns, frames, glass, doors, stairs, services };
   }, [plan, scene, openDoors]);
+  const select = (boxes: Box[]) =>
+    onSelectElement
+      ? (i: number) => {
+          if (boxes[i].id) onSelectElement(boxes[i].id!);
+        }
+      : undefined;
   return (
     <>
-      <FloorSurfaces plan={plan} scene={scene} />
-      {!structural && <Furnishings plan={plan} scene={scene} />}
-      {showRoof && <CadRoofs plan={plan} scene={scene} />}
+      <FloorSurfaces
+        plan={plan}
+        scene={scene}
+        selectedId={selectedId}
+        onSelectElement={onSelectElement}
+      />
+      {!structural && (
+        <Furnishings
+          plan={plan}
+          scene={scene}
+          selectedId={selectedId}
+          onSelectElement={onSelectElement}
+        />
+      )}
+      {showRoof && (
+        <CadRoofs
+          plan={plan}
+          scene={scene}
+          selectedId={selectedId}
+          onSelectElement={onSelectElement}
+        />
+      )}
       <BoxBatch
         boxes={batches.columns}
+        selectedId={selectedId}
+        onClick={select(batches.columns)}
         material={structural ? { color: "#789eac", roughness: 0.75 } : finish}
       />
       <BoxBatch
         boxes={batches.walls}
+        selectedId={selectedId}
+        onClick={select(batches.walls)}
         material={
           structural
             ? {
@@ -414,31 +567,46 @@ function CadLevel({
       />
       {!structural && (
         <>
-          <BoxBatch boxes={batches.frames} material={frameMaterial} />
+          <BoxBatch
+            boxes={batches.frames}
+            material={frameMaterial}
+            selectedId={selectedId}
+            onClick={select(batches.frames)}
+          />
           <BoxBatch
             boxes={batches.glass}
+            selectedId={selectedId}
+            onClick={select(batches.glass)}
             material={glassMaterial}
             shadows={false}
           />
           <BoxBatch
             boxes={batches.doors}
+            selectedId={selectedId}
             material={doorMaterial}
             onClick={
-              interactive
-                ? (i) =>
-                    setOpenDoors((current) => {
-                      const next = new Set(current),
-                        id = batches.doors[i].id!;
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return next;
-                    })
-                : undefined
+              onSelectElement
+                ? select(batches.doors)
+                : interactive
+                  ? (i) =>
+                      setOpenDoors((current) => {
+                        const next = new Set(current),
+                          id = batches.doors[i].id!;
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      })
+                  : undefined
             }
           />
         </>
       )}
-      <BoxBatch boxes={batches.stairs} material={slabMaterial} />
+      <BoxBatch
+        boxes={batches.stairs}
+        material={slabMaterial}
+        selectedId={selectedId}
+        onClick={select(batches.stairs)}
+      />
       {details && (
         <BoxBatch
           boxes={batches.services}
@@ -460,6 +628,8 @@ export function CadBuilding({
   structural,
   simulation,
   showRoof,
+  selectedId,
+  onSelectElement,
 }: {
   blueprint: Blueprint;
   finish: MeshStandardMaterialParameters;
@@ -467,6 +637,8 @@ export function CadBuilding({
   interactive: boolean;
   structural: boolean;
   showRoof: boolean;
+  selectedId?: string | null;
+  onSelectElement?: (id: string) => void;
   simulation?: { active: boolean; intensity: number; direction: "X" | "Y" };
 }) {
   const groups = useRef<Array<Group | null>>([]);
@@ -521,6 +693,8 @@ export function CadBuilding({
                 structural={structural}
                 showRoof={showRoof}
                 details={isolatedLevel !== "All" || interactive}
+                selectedId={selectedId}
+                onSelectElement={onSelectElement}
               />
             </group>
           ),

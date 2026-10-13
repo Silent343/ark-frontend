@@ -1,6 +1,7 @@
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
 
 export type FixturePart = {
+  id: string;
   x: number;
   y: number;
   z: number;
@@ -40,6 +41,7 @@ export function buildFixtureParts(
       depth: number,
     ) => {
       batches[finish].push({
+        id: item.id,
         x:
           (item.x - centerX) / scale +
           Math.cos(rotation) * x +

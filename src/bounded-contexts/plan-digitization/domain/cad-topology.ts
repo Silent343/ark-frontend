@@ -5,6 +5,7 @@ export interface PlanLine {
   b: Point2;
   thickness: number;
   source: string;
+  sourceIds?: string[];
   paired?: boolean;
 }
 export const distance = (a: Point2, b: Point2) =>
@@ -79,6 +80,12 @@ export function mergeLines(
       if (p[1] < -gap || p[0] > length + gap) continue;
       line.b = plus(line.a, u, Math.max(length, p[1]));
       line.a = plus(line.a, u, Math.min(0, p[0]));
+      line.sourceIds = [
+        ...new Set([
+          ...(line.sourceIds ?? [line.source]),
+          ...(current.sourceIds ?? [current.source]),
+        ]),
+      ].slice(0, 500);
       merged = true;
       break;
     }
@@ -160,6 +167,12 @@ export function reconstructWalls(input: PlanLine[]): PlanLine[] {
         b: plus(q, normal, shift),
         thickness: c.thickness,
         source: a.source,
+        sourceIds: [
+          ...new Set([
+            ...(a.sourceIds ?? [a.source]),
+            ...(b.sourceIds ?? [b.source]),
+          ]),
+        ].slice(0, 500),
         paired: true,
       });
       used[c.i].push([start, end]);

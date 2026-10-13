@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useEffect,
   useRef,
@@ -94,15 +94,44 @@ export function CadEditor({
   editMode,
   members,
 }: Props) {
+  const params = useSearchParams();
+  const initialSource = blueprint.cad!.entities.find(
+    (e) => e.id === params.get("source"),
+  );
+  const initialBounds = initialSource
+    ? cadEntityBounds(initialSource)
+    : undefined;
   const [plan, setPlan] = useState<CadPlan>(blueprint.cad!);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialSource?.id ?? null,
+  );
   const [tool, setTool] = useState<"select" | "pan" | "region">("select");
   const [panel, setPanel] = useState<"properties" | "layers" | "levels">(
-    "properties",
+    params.get("panel") === "levels"
+      ? "levels"
+      : params.get("panel") === "layers"
+        ? "layers"
+        : "properties",
   );
-  const [scope, setScope] = useState("");
+  const [scope, setScope] = useState(
+    blueprint.cad!.regions.find((r) => r.id === params.get("region"))?.id ?? "",
+  );
   const [fitKey, setFitKey] = useState(0);
-  const [focusBounds, setFocusBounds] = useState<CadBounds | undefined>();
+  const [focusBounds, setFocusBounds] = useState<CadBounds | undefined>(() => {
+    if (!initialBounds) return undefined;
+    const pad =
+      Math.max(
+        initialBounds.maxX - initialBounds.minX,
+        initialBounds.maxY - initialBounds.minY,
+        1 / blueprint.cad!.metersPerCadUnit,
+      ) * 0.8;
+    return {
+      minX: initialBounds.minX - pad,
+      minY: initialBounds.minY - pad,
+      maxX: initialBounds.maxX + pad,
+      maxY: initialBounds.maxY + pad,
+    };
+  });
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -152,6 +181,33 @@ export function CadEditor({
   function remember() {
     setHistory((h) => [...h.slice(-14), current.current]);
   }
+  function editRegion(id: string, patch: Partial<CadPlan["regions"][number]>) {
+    remember();
+    update({
+      ...plan,
+      regions: plan.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    });
+  }
+  const proposedHeight = (id: string) => {
+    const entries = plan.regions
+      .filter((r) => r.enabled)
+      .flatMap((region) =>
+        Array.from({ length: region.repeat }, (_, floor) => ({
+          id: region.id,
+          floor,
+          elevation:
+            region.elevations?.[floor] ??
+            region.elevation + floor * floorHeight,
+        })),
+      )
+      .sort((a, b) => a.elevation - b.elevation);
+    const index = entries.findIndex((e) => e.id === id && e.floor === 0);
+    const gap =
+      index >= 0 && entries[index + 1]
+        ? entries[index + 1].elevation - entries[index].elevation
+        : 0;
+    return gap > 0 ? gap : floorHeight;
+  };
   function update(next: CadPlan) {
     changed.current = true;
     setDirty(true);
@@ -992,25 +1048,17 @@ export function CadEditor({
                   <div className="cad-field-pair">
                     <label>
                       Elevación (m)
-                      <input
-                        type="number"
-                        step=".1"
+                      <CadNumberInput
+                        min={-1000}
+                        max={1000}
                         value={r.elevation}
-                        onChange={(e) => {
-                          remember();
-                          update({
-                            ...plan,
-                            regions: plan.regions.map((v) =>
-                              v.id === r.id
-                                ? {
-                                    ...v,
-                                    elevation: Number(e.target.value),
-                                    elevations: undefined,
-                                  }
-                                : v,
-                            ),
-                          });
-                        }}
+                        onCommit={(elevation) =>
+                          editRegion(r.id, {
+                            elevation,
+                            elevations: undefined,
+                            elevationSource: "manual",
+                          })
+                        }
                       />
                     </label>
                     <label>
@@ -1040,6 +1088,88 @@ export function CadEditor({
                       />
                     </label>
                   </div>
+                  <label>
+                    Altura de muros (m)
+                    <CadNumberInput
+                      min={0.1}
+                      max={100}
+                      value={r.wallHeight ?? proposedHeight(r.id)}
+                      onCommit={(wallHeight) =>
+                        editRegion(r.id, { wallHeight })
+                      }
+                    />
+                    <small>
+                      {r.wallHeight !== undefined
+                        ? "Confirmada manualmente"
+                        : "Propuesta desde niveles / altura de referencia"}
+                      . Usa un corte o una cota de altura; el desnivel entre
+                      pisos no siempre es la altura del muro.
+                    </small>
+                  </label>
+                  {r.wallHeight === undefined ? (
+                    <button
+                      className="pm-button"
+                      onClick={() =>
+                        editRegion(r.id, { wallHeight: proposedHeight(r.id) })
+                      }
+                    >
+                      Confirmar {proposedHeight(r.id)} m
+                    </button>
+                  ) : (
+                    <button
+                      className="pm-button"
+                      onClick={() =>
+                        editRegion(r.id, { wallHeight: undefined })
+                      }
+                    >
+                      Volver a altura propuesta
+                    </button>
+                  )}
+                  <details className="cad-registration-controls">
+                    <summary>Ajustar alineación entre plantas</summary>
+                    <p>
+                      Corrección en metros sobre la alineación automática.
+                      Utiliza un eje o una columna común como referencia.
+                    </p>
+                    <div className="cad-field-pair">
+                      <label>
+                        Corrección X (m)
+                        <CadNumberInput
+                          min={-100000}
+                          max={100000}
+                          value={r.alignment?.x ?? 0}
+                          onCommit={(x) =>
+                            editRegion(r.id, {
+                              alignment: { x, y: r.alignment?.y ?? 0 },
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Corrección Y (m)
+                        <CadNumberInput
+                          min={-100000}
+                          max={100000}
+                          value={r.alignment?.y ?? 0}
+                          onCommit={(y) =>
+                            editRegion(r.id, {
+                              alignment: { x: r.alignment?.x ?? 0, y },
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    {r.alignment && (
+                      <button
+                        className="pm-button"
+                        onClick={() =>
+                          editRegion(r.id, { alignment: undefined })
+                        }
+                      >
+                        Restablecer alineación automática
+                      </button>
+                    )}
+                  </details>
                   <button
                     className="pm-button"
                     onClick={() => {

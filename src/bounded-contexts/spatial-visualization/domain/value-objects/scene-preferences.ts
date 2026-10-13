@@ -13,6 +13,7 @@ export type ModelViewMode = "Architecture" | "Structure";
 /** Rectangular wall fragment ready for consumption by a 3D rendering adapter. */
 export interface SceneWallSegment {
   id: string;
+  elementId?: string;
   length: number;
   height: number;
   x: number;

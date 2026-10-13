@@ -96,6 +96,7 @@ export class BuildSceneModel {
         const midpoint = (start + end) / 2;
         wallSegments.push({
           id,
+          elementId: wall.id,
           length: (end - start) / scale,
           height,
           x: (wall.start[0] + unitX * midpoint - centerX) / scale,

@@ -39,6 +39,8 @@ interface SourceDocument {
   file_data: string;
   file_name: string;
   mime_type: string;
+  discipline?: string;
+  notes?: string;
 }
 const disciplines: Array<{ id: PlanDiscipline; label: string }> = [
   { id: "architecture", label: "Arquitectura" },
@@ -87,6 +89,7 @@ export function PlanImportDialog({
   const [file, setFile] = useState<File | null>(null),
     [page, setPage] = useState(1);
   const [discipline, setDiscipline] = useState<PlanDiscipline>("architecture");
+  const [viewType, setViewType] = useState<"plan" | "reference">("plan");
   const [levelId, setLevelId] = useState(
     initialLevelId ??
       blueprint.levels.find((item) => item.elevation === 0)?.id ??
@@ -154,7 +157,12 @@ export function PlanImportDialog({
     setConfirmedStairs([]);
     setError("");
   };
-  async function load(next: File, nextPage: number) {
+  async function load(
+    next: File,
+    nextPage: number,
+    documentDiscipline?: string,
+    nextView: "plan" | "reference" = "plan",
+  ) {
     const run = ++generation.current;
     controller.current?.abort();
     const operation = new AbortController();
@@ -168,6 +176,7 @@ export function PlanImportDialog({
         return;
       }
       setFile(next);
+      setViewType(nextView);
       setPage(nextPage);
       setSource(raster);
       setVisibleCadLayers(
@@ -178,10 +187,14 @@ export function PlanImportDialog({
       setPreviewZoom(1);
       if (!replaceSheetId)
         setDiscipline(
-          suggestDiscipline(
-            next.name,
-            raster.cad ? "" : raster.text.map((item) => item.text).join(" "),
-          ),
+          disciplines.some((d) => d.id === documentDiscipline)
+            ? (documentDiscipline as PlanDiscipline)
+            : suggestDiscipline(
+                next.name,
+                raster.cad
+                  ? ""
+                  : raster.text.map((item) => item.text).join(" "),
+              ),
         );
       setManual(!!raster.cad); // A CAD preview alone must not invent semantic walls or rooms.
       setRotation(0);
@@ -222,13 +235,24 @@ export function PlanImportDialog({
       void load(
         new File([bytes], document.file_name, { type: document.mime_type }),
         1,
+        document.discipline,
+        /^Vista: (Corte|Elevación|Cuadro|Referencia)/.test(document.notes ?? "")
+          ? "reference"
+          : "plan",
       );
     } catch {
       setError(t("import.invalidFile"));
     }
   }
   async function analyze() {
-    if (!prepared || !file || points.length !== 2 || perspective) return;
+    if (
+      !prepared ||
+      !file ||
+      points.length !== 2 ||
+      perspective ||
+      viewType !== "plan"
+    )
+      return;
     const run = ++generation.current;
     const operation = new AbortController();
     controller.current = operation;
@@ -251,7 +275,11 @@ export function PlanImportDialog({
         stairs: [],
         services: [],
         slabs: [],
-        levels: blueprint.levels,
+        levels: blueprint.levels.map((l) =>
+          l.id === levelId
+            ? { ...l, height: wallHeight, heightSource: "manual" }
+            : l,
+        ),
         calibration: undefined,
         review: undefined,
       };
@@ -481,6 +509,11 @@ export function PlanImportDialog({
       };
       const next: Blueprint = {
         ...basePlan,
+        levels: basePlan.levels.map((l) =>
+          l.id === levelId
+            ? { ...l, height: wallHeight, heightSource: "manual" }
+            : l,
+        ),
         width: Math.max(blueprint.width, sheet.x + sheet.width),
         height: Math.max(blueprint.height, sheet.y + sheet.height),
         sourceImage: existing ? blueprint.sourceImage : undefined,
@@ -713,6 +746,30 @@ export function PlanImportDialog({
                 ))}
               </select>
             </label>
+            {!source?.cad && (
+              <label>
+                Tipo de vista
+                <select
+                  value={viewType}
+                  onChange={(e) => {
+                    setViewType(e.target.value as "plan" | "reference");
+                    setDraft(null);
+                  }}
+                >
+                  <option value="plan">Planta · vista desde arriba</option>
+                  <option value="reference">
+                    Corte, elevación o detalle · referencia
+                  </option>
+                </select>
+              </label>
+            )}
+            {viewType === "reference" && (
+              <p className="plan-import-help">
+                Esta vista se conserva como documento de referencia. No se
+                extruye como una planta. Úsala para confirmar alturas o medidas;
+                selecciona una planta para generar geometría.
+              </p>
+            )}
             <p className="plan-import-help">{t("import.multiSheetHint")}</p>
             {documents.some((item) => item.file_data) && (
               <label>
@@ -746,7 +803,7 @@ export function PlanImportDialog({
                       onChange={(event) => {
                         const value = Number(event.target.value);
                         if (value >= 1 && value <= source.pageCount)
-                          void load(file, value);
+                          void load(file, value, discipline, viewType);
                       }}
                     />
                   </label>
@@ -956,6 +1013,7 @@ export function PlanImportDialog({
               <button
                 className="pm-button pm-primary"
                 disabled={
+                  viewType !== "plan" ||
                   points.length !== 2 ||
                   Number(distance) <= 0 ||
                   !Number.isFinite(Number(distance)) ||

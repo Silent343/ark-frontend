@@ -1,6 +1,7 @@
 import { ValidationError } from "@/kernel/domain/resource";
 import { planElements, planTopologyIssues } from "./plan-review";
 import type { Blueprint } from "./entities/blueprint";
+import { validModelEvidence } from "./model-evidence";
 /** Validates shared geometry before any client can consume it in the 2D or WebGL renderer. */
 export function validateSharedBlueprint(value: Record<string, unknown>) {
   const invalid = () => {
@@ -141,6 +142,7 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
     }
   }
   if (!(value.levels as unknown[]).length) invalid();
+  if (!validModelEvidence(value as unknown as Blueprint)) invalid();
   const levelIds = new Set((value.levels as {id:string}[]).map((level) => level.id));
   const sheets = (value.sheets ?? []) as {id:string;levelId:string;discipline:string}[];
   const sheetIds = new Set(sheets.map((sheet) => sheet.id));

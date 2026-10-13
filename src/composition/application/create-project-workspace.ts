@@ -4,10 +4,20 @@ import { projectManagement } from "@/bounded-contexts/project-management/public"
 
 /** Coordinates workspace initialization while keeping both bounded contexts independent. */
 export class CreateProjectWorkspace {
-  async execute(input: CreateProjectInput) {
+  async execute(input: CreateProjectInput, onCreated?: (id: string) => void) {
     const project = await projectManagement.createProject.execute(input);
-    const seed = await planDigitization.getBlueprint.execute(project.id);
-    const basements = Math.max(0, Math.min(10, Math.floor(input.basements ?? 0)));
+    // Preserve the resource identity even if a subsequent initialization step fails.
+    onCreated?.(project.id);
+    await this.initialize(project.id, input);
+    return project;
+  }
+
+  async initialize(projectId: string, input: CreateProjectInput) {
+    const seed = await planDigitization.getBlueprint.execute(projectId);
+    const basements = Math.max(
+      0,
+      Math.min(10, Math.floor(input.basements ?? 0)),
+    );
     const levels = Array.from(
       { length: Math.max(1, input.floors) + basements },
       (_, index) => {
@@ -21,10 +31,10 @@ export class CreateProjectWorkspace {
     );
     await planDigitization.saveBlueprint.execute({
       ...seed,
-      projectId: project.id,
+      projectId,
+      intent: input.intent,
       levels,
     });
-    return project;
   }
 }
 

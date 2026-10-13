@@ -55,6 +55,12 @@ export interface CadRegion extends CadBounds {
   repeat: number;
   /** Explicit NPT heights found on repeated-floor drawings, when available. */
   elevations?: number[];
+  elevationSource?: "annotation" | "manual";
+  /** Confirmed wall height for this view, in metres; never a CAD coordinate. */
+  wallHeight?: number;
+  /** Manual translation into the reference plan, in metres. */
+  /** Manual correction to automatic registration, in metres. */
+  alignment?: { x: number; y: number };
 }
 export interface CadPlan {
   sourceName: string;

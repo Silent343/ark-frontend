@@ -43,6 +43,8 @@ export type {
 } from "@/bounded-contexts/spatial-visualization/domain/value-objects/scene-preferences";
 
 interface BuildingSceneProps {
+  selectedElementId?: string | null;
+  onSelectElement?: (id: string) => void;
   blueprint: Blueprint;
   floors: number;
   material: MaterialPreset;
@@ -243,6 +245,8 @@ function Building({
   modelViewMode = "Architecture",
   isolatedLevel = "All",
   interactive = false,
+  selectedElementId,
+  onSelectElement,
 }: Omit<BuildingSceneProps, "lighting" | "cameraPreset"> & {
   interactive?: boolean;
 }) {
@@ -326,7 +330,12 @@ function Building({
             {modelViewMode === "Architecture" ? (
               <>
                 {!!plan.slabs?.length && (
-                  <FloorSurfaces plan={plan} scene={scene} />
+                  <FloorSurfaces
+                    plan={plan}
+                    scene={scene}
+                    selectedId={selectedElementId}
+                    onSelectElement={onSelectElement}
+                  />
                 )}
                 {!plan.slabs?.length &&
                   plan.rooms.map((room, roomIndex) => {
@@ -371,6 +380,14 @@ function Building({
                     receiveShadow
                     position={[wall.x, wall.y, wall.z]}
                     rotation-y={wall.rotation}
+                    onClick={
+                      onSelectElement && wall.elementId
+                        ? (event) => {
+                            event.stopPropagation();
+                            onSelectElement(wall.elementId!);
+                          }
+                        : undefined
+                    }
                   >
                     <boxGeometry
                       args={[wall.length, wall.height, wall.thickness]}
@@ -378,7 +395,11 @@ function Building({
                     <meshStandardMaterial
                       key={`${material}-${wall.id}`}
                       {...finish}
-                      color={zoneColor ?? finish.color}
+                      color={
+                        wall.elementId === selectedElementId
+                          ? "#44b8ff"
+                          : (zoneColor ?? finish.color)
+                      }
                       emissive={zoneColor ?? "#000000"}
                       emissiveIntensity={zoneColor ? 0.12 : 0}
                     />
@@ -388,6 +409,14 @@ function Building({
                 {plan.fixtures?.map((item) => (
                   <mesh
                     key={item.id}
+                    onClick={
+                      onSelectElement
+                        ? (event) => {
+                            event.stopPropagation();
+                            onSelectElement(item.id);
+                          }
+                        : undefined
+                    }
                     castShadow
                     receiveShadow
                     position={[
@@ -403,28 +432,47 @@ function Building({
                         item.depth / scene.scale,
                       ]}
                     />
-                    <meshStandardMaterial color="#b8a78e" roughness={0.8} />
+                    <meshStandardMaterial
+                      color={
+                        item.id === selectedElementId ? "#44b8ff" : "#b8a78e"
+                      }
+                      roughness={0.8}
+                    />
                   </mesh>
                 ))}
                 {plan.columns.map((column) => (
                   <mesh
                     key={`${floor}-${column.id}`}
+                    onClick={
+                      onSelectElement
+                        ? (event) => {
+                            event.stopPropagation();
+                            onSelectElement(column.id);
+                          }
+                        : undefined
+                    }
                     castShadow
+                    rotation-y={(-(column.rotation ?? 0) * Math.PI) / 180}
                     position={[
                       (column.x - scene.centerX) / scene.scale,
-                      1.4,
+                      (column.height ?? blueprint.levels[floor].height ?? 2.8) /
+                        2,
                       (column.y - scene.centerY) / scene.scale,
                     ]}
                   >
                     <boxGeometry
                       args={[
                         column.size / scene.scale,
-                        2.8,
-                        column.size / scene.scale,
+                        column.height ?? blueprint.levels[floor].height ?? 2.8,
+                        (column.depth ?? column.size) / scene.scale,
                       ]}
                     />
                     <meshStandardMaterial
-                      color={zoneColor ?? "#69716a"}
+                      color={
+                        column.id === selectedElementId
+                          ? "#44b8ff"
+                          : (zoneColor ?? "#69716a")
+                      }
                       roughness={0.75}
                     />
                   </mesh>
@@ -432,20 +480,32 @@ function Building({
                 {levelScene.openings.map((opening) => {
                   const doorKey = `${floor}-${opening.id}`;
                   return (
-                    <OpeningAssembly
+                    <group
                       key={doorKey}
-                      opening={opening}
-                      interactive={interactive}
-                      open={openDoors.has(doorKey)}
-                      onToggle={() =>
-                        setOpenDoors((current) => {
-                          const next = new Set(current);
-                          if (next.has(doorKey)) next.delete(doorKey);
-                          else next.add(doorKey);
-                          return next;
-                        })
+                      onClick={
+                        onSelectElement
+                          ? (event) => {
+                              event.stopPropagation();
+                              onSelectElement(opening.id);
+                            }
+                          : undefined
                       }
-                    />
+                    >
+                      <OpeningAssembly
+                        key={doorKey}
+                        opening={opening}
+                        interactive={interactive}
+                        open={openDoors.has(doorKey)}
+                        onToggle={() =>
+                          setOpenDoors((current) => {
+                            const next = new Set(current);
+                            if (next.has(doorKey)) next.delete(doorKey);
+                            else next.add(doorKey);
+                            return next;
+                          })
+                        }
+                      />
+                    </group>
                   );
                 })}
                 {plan.stairs?.map((stair) =>
@@ -457,6 +517,8 @@ function Building({
                       width={(stair.radius * 2) / scene.scale}
                       length={(stair.length ?? stair.radius * 4) / scene.scale}
                       rotation={(-(stair.rotation ?? 0) * Math.PI) / 180}
+                      rise={stair.rise ?? blueprint.levels[floor].height ?? 2.8}
+                      steps={stair.stepCount}
                     />
                   ) : (
                     <SpiralStair
@@ -464,6 +526,8 @@ function Building({
                       x={(stair.x - scene.centerX) / scene.scale}
                       z={(stair.y - scene.centerY) / scene.scale}
                       radius={stair.radius / scene.scale}
+                      rise={stair.rise ?? blueprint.levels[floor].height ?? 2.8}
+                      steps={stair.stepCount}
                     />
                   ),
                 )}
@@ -677,16 +741,19 @@ function SpiralStair({
   x,
   z,
   radius,
+  rise = 2.8,
+  steps = 15,
 }: {
   x: number;
   z: number;
   radius: number;
+  rise?: number;
+  steps?: number;
 }) {
-  const steps = 15;
   return (
     <group position={[x, 0, z]}>
-      <mesh castShadow position={[0, 1.35, 0]}>
-        <cylinderGeometry args={[0.055, 0.055, 2.7, 14]} />
+      <mesh castShadow position={[0, rise / 2, 0]}>
+        <cylinderGeometry args={[0.055, 0.055, rise, 14]} />
         <meshStandardMaterial
           color="#4b4f4a"
           metalness={0.45}
@@ -702,7 +769,7 @@ function SpiralStair({
             castShadow
             position={[
               Math.cos(angle) * radius * 0.48,
-              0.14 + index * 0.16,
+              ((index + 1) * rise) / steps,
               Math.sin(angle) * radius * 0.48,
             ]}
             rotation-y={-angle}
@@ -712,7 +779,7 @@ function SpiralStair({
           </mesh>
         );
       })}
-      <mesh castShadow position={[0, 2.5, 0]}>
+      <mesh castShadow position={[0, rise, 0]}>
         <torusGeometry args={[radius, 0.035, 8, 48, Math.PI * 1.7]} />
         <meshStandardMaterial color="#4b4f4a" metalness={0.5} roughness={0.4} />
       </mesh>
@@ -727,14 +794,17 @@ function StraightStair({
   width,
   length,
   rotation,
+  rise = 2.8,
+  steps = 12,
 }: {
   x: number;
   z: number;
   width: number;
   length: number;
   rotation: number;
+  rise?: number;
+  steps?: number;
 }) {
-  const steps = 12;
   return (
     <group position={[x, 0, z]} rotation-y={rotation} name="Escalera recta">
       {Array.from({ length: steps }).map((_, index) => {
@@ -746,7 +816,7 @@ function StraightStair({
             receiveShadow
             position={[
               0,
-              ((index + 1) * 2.7) / steps,
+              ((index + 1) * rise) / steps,
               -length / 2 + (index + 0.5) * tread,
             ]}
           >
@@ -1057,6 +1127,8 @@ export function BuildingScene(props: BuildingSceneProps) {
         ) && <LotTerrain selection={props.siteSelection} />}
       {hasGeometry && cadModel ? (
         <CadBuilding
+          selectedId={props.selectedElementId}
+          onSelectElement={props.onSelectElement}
           blueprint={props.blueprint}
           finish={materialMap[props.material]}
           isolatedLevel={props.isolatedLevel ?? "All"}
@@ -1076,6 +1148,8 @@ export function BuildingScene(props: BuildingSceneProps) {
             simulation={props.simulation}
             isolatedLevel={props.isolatedLevel}
             interactive={props.cameraPreset === "Walkthrough"}
+            selectedElementId={props.selectedElementId}
+            onSelectElement={props.onSelectElement}
           />
         )
       )}

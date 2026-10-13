@@ -5,6 +5,15 @@ export interface Level {
   name: string;
   elevation: number;
   height?: number;
+  heightSource?: "manual" | "levels" | "assumed";
+}
+export interface ElementEvidence {
+  sourceName: string;
+  regionId: string;
+  sourceIds: string[];
+  method: "paired-faces" | "cad-symbol" | "closed-contour" | "treads" | "cad-text";
+  /** Properties whose values are placeholders rather than measurements. */
+  assumed: string[];
 }
 export interface Room {
   id: string;
@@ -162,6 +171,8 @@ export interface PlanReview {
 
 /** Shared, calibrated geometry consumed by both editors and the procedural renderer. */
 export interface Blueprint {
+  intent?: "visualization" | "coordination" | "bim-preparation";
+  elementEvidence?: Record<string, ElementEvidence>;
   cad?: CadPlan;
   slabs?: FloorSlab[];
   /** Original furniture symbols remain precise plan details rather than invented bounding-box solids. */
@@ -175,6 +186,8 @@ export interface Blueprint {
     fixtureCount?: number;
     unresolvedSymbols?: number;
     inferredLayers?: string[];
+    unmatchedOpenings?: number;
+    unregisteredRegions?: string[];
   };
   fixtures?: Array<{
     id: string;

@@ -286,6 +286,7 @@ export function detectCadRegions(
     );
     if (!values.length) continue;
     region.elevation = values[0];
+    region.elevationSource = "annotation";
     if (region.repeat > 1) {
       const upper = values
         .filter((v) => v >= region.elevation)

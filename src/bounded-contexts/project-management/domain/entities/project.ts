@@ -22,6 +22,7 @@ export interface Project {
 
 /** Input accepted by the create-project use case. */
 export interface CreateProjectInput {
+  intent?: "visualization" | "coordination" | "bim-preparation";
   name: string;
   location: string;
   floors: number;

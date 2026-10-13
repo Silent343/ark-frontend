@@ -10,9 +10,9 @@ export function useCadReconstruction(source?: Blueprint) {
     blueprint?: Blueprint;
     error?: string;
   }>();
-  const needsUpgrade = !!source?.cad && source.reconstruction?.version !== 3;
+  const needsUpgrade = !!source?.cad && (source.reconstruction?.version ?? 0) < 4;
   useEffect(() => {
-    if (!source?.cad || source.reconstruction?.version === 3) return;
+    if (!source?.cad || (source.reconstruction?.version ?? 0) >= 4) return;
     const controller = new AbortController();
     void compileCadModel(source, source.cad, 2.8, controller.signal)
       .then((blueprint) => {

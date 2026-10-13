@@ -11,6 +11,7 @@ import {
   Maximize2,
   PenLine,
   Users,
+  UploadCloud,
   WalletCards,
 } from "lucide-react";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
@@ -69,6 +70,28 @@ export function OverviewScreen() {
   if (!data) return null;
   const { project } = data;
   const root = "/projects/" + project.id;
+  const hasSource = !!(
+    previewBlueprint?.cad ||
+    previewBlueprint?.sourceImage ||
+    previewBlueprint?.sheets?.length
+  );
+  const hasModel = !!(
+    previewBlueprint?.walls.length ||
+    previewBlueprint?.columns.length ||
+    previewBlueprint?.roofs?.length
+  );
+  const planAction =
+    root +
+    (hasModel
+      ? "/model"
+      : "/editor?mode=edit" + (hasSource ? "" : "&import=1"));
+  const purpose =
+    previewBlueprint?.intent &&
+    {
+      visualization: "Exploración 3D",
+      coordination: "Revisión y coordinación",
+      "bim-preparation": "Preparación de información BIM",
+    }[previewBlueprint.intent];
   const progress = progressOf(data.tasks);
   const actual = data.budgetItems.reduce(
     (sum, item) => sum + item.actual_cost,
@@ -149,6 +172,7 @@ export function OverviewScreen() {
             {project.location} ·{" "}
             {project.client_name || t("pm.clientNotAssigned")}
           </p>
+          {purpose && <span className="pm-project-purpose">{purpose}</span>}
         </div>
         <div className="pm-actions">
           <button
@@ -162,9 +186,13 @@ export function OverviewScreen() {
             <PenLine size={15} />
             {t("pm.editProject")}
           </button>
-          <Link className="pm-button pm-primary" href={root + "/model"}>
-            <Box size={16} />
-            {t("pm.openStudio")}
+          <Link className="pm-button pm-primary" href={planAction}>
+            {hasModel ? <Box size={16} /> : <UploadCloud size={16} />}
+            {hasModel
+              ? t("pm.openStudio")
+              : hasSource
+                ? "Revisar plano"
+                : "Agregar primer plano"}
           </Link>
         </div>
       </header>
@@ -216,7 +244,11 @@ export function OverviewScreen() {
         <div className="pm-section-heading">
           <div>
             <p className="pm-eyebrow">{t("pm.attention.eyebrow")}</p>
-            <h2 id="pm-attention-title">{t("pm.attention.title")}</h2>
+            <h2 id="pm-attention-title">
+              {attentionItems.length
+                ? t("pm.attention.title")
+                : "Coordinación al día"}
+            </h2>
           </div>
         </div>
         {attentionItems.length ? (
@@ -259,7 +291,20 @@ export function OverviewScreen() {
             className="pm-plan-preview"
             aria-label={t("pm.planPreview", "Vista previa del plano")}
           >
-            {previewBlueprint?.cad ? (
+            {previewBlueprint && !hasSource && !hasModel ? (
+              <div className="pm-plan-empty-start">
+                <UploadCloud size={28} />
+                <h3>El proyecto está listo para recibir tus planos</h3>
+                <p>
+                  Agrega un CAD, PDF o imagen. Después revisarás escala, plantas
+                  y elementos antes de abrir el modelo 3D.
+                </p>
+                <Link className="pm-button pm-primary" href={planAction}>
+                  Agregar primer plano
+                  <ArrowUpRight size={14} />
+                </Link>
+              </div>
+            ) : previewBlueprint?.cad ? (
               <div style={{ width: "100%", height: 260 }}>
                 <CadPlanCanvas plan={previewBlueprint.cad} />
               </div>
@@ -277,7 +322,11 @@ export function OverviewScreen() {
             )}
           </div>
           <div className="pm-plan-preview-footer">
-            <span>{t("pm.semanticPlan", "Plano semántico del proyecto")}</span>
+            <span>
+              {hasSource || hasModel
+                ? t("pm.semanticPlan", "Plano semántico del proyecto")
+                : "Sin planos importados"}
+            </span>
             <Link href={root + "/editor?mode=edit"}>
               {t("pm.openInEditor", "Abrir en editor")}
               <ArrowUpRight size={14} />

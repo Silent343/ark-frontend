@@ -8,8 +8,8 @@ const cache = new Map(),
 function load(name) {
   const file = path.resolve(root, name.endsWith(".ts") ? name : name + ".ts");
   if (cache.has(file)) return cache.get(file).exports;
-  const module = { exports: {} };
-  cache.set(file, module);
+  const loaded = { exports: {} };
+  cache.set(file, loaded);
   const js = ts.transpileModule(fs.readFileSync(file, "utf8"), {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -20,10 +20,10 @@ function load(name) {
     filename: file,
   })(
     (id) => load(path.resolve(path.dirname(file), id)),
-    module,
-    module.exports,
+    loaded,
+    loaded.exports,
   );
-  return module.exports;
+  return loaded.exports;
 }
 const domain = "src/bounded-contexts/plan-digitization/domain/";
 const ops = load(domain + "cad-operations"),
@@ -165,6 +165,146 @@ assert.equal(model.fixtures.length, 1);
 assert.equal(model.fixtures[0].kind, "bed");
 assert.equal(model.fixtures[0].evidence, "block");
 assert.deepEqual(model.fixtures[0].sourceIds, ["bed"]);
+const { validModelEvidence } = load(domain + "model-evidence");
+const { inspectModel, modelReadiness } = load(domain + "model-inspection");
+const { modelIntegrityIssues } = load(domain + "model-integrity");
+const integrityPlan = {
+  ...base,
+  levels: [{ id: "ground", elevation: 0 }],
+  walls: [
+    { id: "wall", start: [0, 0], end: [600, 0], thickness: 12, height: 3 },
+  ],
+  doors: [
+    {
+      id: "door",
+      wallId: "wall",
+      x: 120,
+      y: 0,
+      width: 60,
+      height: 2.1,
+      rotation: 0,
+    },
+  ],
+  windows: [],
+};
+assert.equal(modelIntegrityIssues(integrityPlan).length, 0);
+assert(
+  modelIntegrityIssues({
+    ...integrityPlan,
+    doors: [{ ...integrityPlan.doors[0], height: 4 }],
+  }).some((i) => i.code === "outside-wall"),
+);
+assert(
+  modelIntegrityIssues({
+    ...integrityPlan,
+    doors: [{ ...integrityPlan.doors[0], wallId: "missing" }],
+  }).some((i) => i.code === "missing-host"),
+);
+assert(
+  modelIntegrityIssues({
+    ...integrityPlan,
+    doors: [
+      integrityPlan.doors[0],
+      { ...integrityPlan.doors[0], id: "duplicate" },
+    ],
+  }).some((i) => i.code === "overlapping-opening"),
+);
+assert(
+  modelIntegrityIssues({
+    ...integrityPlan,
+    walls: [{ ...integrityPlan.walls[0], end: [0, 0] }],
+  }).some((i) => i.code === "invalid-wall"),
+);
+assert.equal(model.reconstruction.version, 4);
+assert(
+  validModelEvidence(model),
+  "Compiled source references must be resolvable",
+);
+assert.deepEqual(model.elementEvidence[model.fixtures[0].id].sourceIds, [
+  "bed",
+]);
+assert(model.elementEvidence[model.fixtures[0].id].assumed.includes("height"));
+assert(inspectModel(model).some((e) => e.id === model.fixtures[0].id));
+assert(
+  modelReadiness(model).some((c) => c.id === "height"),
+  "Defaults must be visible as pending evidence",
+);
+const tampered = structuredClone(model);
+tampered.elementEvidence[model.fixtures[0].id].sourceIds = ["invented"];
+assert(!validModelEvidence(tampered));
+const { reconstructWalls, mergeLines } = load(domain + "cad-topology");
+const paired = reconstructWalls([
+  { a: [0, 0], b: [8, 0], source: "face-a", thickness: 0 },
+  { a: [0, 0.2], b: [8, 0.2], source: "face-b", thickness: 0 },
+]);
+assert.equal(paired.length, 1);
+assert.deepEqual(new Set(paired[0].sourceIds), new Set(["face-a", "face-b"]));
+assert.equal(
+  mergeLines([
+    { a: [0, 0], b: [4, 0], source: "part-a", thickness: 0 },
+    { a: [4, 0], b: [8, 0], source: "part-b", thickness: 0 },
+  ])[0].sourceIds.length,
+  2,
+);
+const tall = structuredClone(furnished);
+tall.regions = [
+  {
+    ...tall.regions[0],
+    id: "auditorium",
+    elevation: 0,
+    elevationSource: "annotation",
+  },
+  {
+    ...tall.regions[0],
+    id: "upper",
+    elevation: 9.6,
+    elevationSource: "annotation",
+  },
+];
+const tallModel = ops.compileCadBlueprint(base, tall);
+assert.equal(
+  tallModel.levels[0].height,
+  9.6,
+  "A measured tall space must not be clamped to a generic storey height",
+);
+assert.equal(tallModel.levels[0].heightSource, "levels");
+tall.regions[0].wallHeight = 8.4;
+const confirmed = ops.compileCadBlueprint(base, tall);
+assert.equal(confirmed.levels[0].height, 8.4);
+assert.equal(confirmed.levels[0].heightSource, "manual");
+const structuralCopy = structuredClone(tall);
+structuralCopy.entities.push({
+  ...edge("column-source", [1, 1, 1.5, 1, 1.5, 1.5, 1, 1.5], "COLUMNAS"),
+  closed: true,
+});
+structuralCopy.layers.push({
+  name: "COLUMNAS",
+  role: "column",
+  visible: true,
+  count: 1,
+});
+const structuralModel = ops.compileCadBlueprint(base, structuralCopy);
+assert(structuralModel.columns.length > 0);
+assert.equal(
+  structuralModel.columns[0].height,
+  9.6,
+  "Wall-height adjustments must not change the level-to-level span of columns",
+);
+assert(
+  !confirmed.elementEvidence[confirmed.walls[0].id].assumed.includes("height"),
+);
+const shifted = structuredClone(tall);
+shifted.regions[0].alignment = { x: 1.5, y: -0.5 };
+const corrected = ops.compileCadBlueprint(base, shifted);
+assert(
+  Math.abs(corrected.walls[0].start[0] - confirmed.walls[0].start[0] - 90) <
+    0.001,
+  "Registration correction must be in metres, not CAD units",
+);
+assert(
+  Math.abs(corrected.walls[0].start[1] - confirmed.walls[0].start[1] - 30) <
+    0.001,
+);
 const { buildFixtureParts } = load(
   "src/bounded-contexts/spatial-visualization/application/fixture-parts",
 );
@@ -207,5 +347,5 @@ assert(floors[0].polygon.length >= 4);
 const allWhite = new Uint8ClampedArray(w * h * 4).fill(255);
 assert.equal(detectColoredSpaces(allWhite, w, h, "ground").length, 0);
 console.log(
-  "PASS: title decoding, terrace regression, anonymous layers, manual overrides, fixture provenance, instancing, colored raster walls and floors.",
+  "PASS: CAD evidence, metric registration, tall spaces, manual heights, host integrity, instanced fixtures and colored raster walls/floors.",
 );

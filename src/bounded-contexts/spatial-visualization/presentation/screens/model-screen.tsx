@@ -2,10 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import {
-  Activity,
   BoxSelect,
   Building2,
   Check,
@@ -14,7 +12,6 @@ import {
   EyeOff,
   Footprints,
   Layers3,
-  Maximize2,
   Moon,
   Orbit,
   Palette,
@@ -40,6 +37,7 @@ import type { ConstructionSiteSelection } from "@/bounded-contexts/site-planning
 import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { useRenderSettings } from "../use-render-settings";
 import { useCadReconstruction } from "../use-cad-reconstruction";
+import { ModelInspector } from "../components/model-inspector";
 
 const BuildingScene = dynamic(
   () =>
@@ -93,8 +91,6 @@ export function ModelScreen({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const { settings: renderSettings, update: updateRenderSettings } =
     useRenderSettings(projectId);
-  const searchParams = useSearchParams();
-  const editMode = searchParams.get("mode") === "edit";
   const [material, setMaterial] = useState<MaterialPreset>("Concrete");
   const [lighting, setLighting] = useState<LightingPreset>("Day");
   const [camera, setCamera] = useState<CameraPreset>("Isometric");
@@ -102,6 +98,9 @@ export function ModelScreen({ projectId }: { projectId: string }) {
   const [showRoof, setShowRoof] = useState(false);
   const [showTerrain, setShowTerrain] = useState(false);
   const [isolatedLevel, setIsolatedLevel] = useState<number | "All">("All");
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(
+    null,
+  );
   const [siteSelection, setSiteSelection] =
     useState<ConstructionSiteSelection | null>(null);
   if (loading) return <ModelSkeleton />;
@@ -145,170 +144,47 @@ export function ModelScreen({ projectId }: { projectId: string }) {
       </div>
     );
 
-  if (!editMode) {
-    return (
-      <div className="mx-auto max-w-[1600px]">
-        <PageHeader
-          eyebrow={`Modelo 3D · ${data.project.name}`}
-          title={t("model.previewTitle", "Vista previa del modelo 3D")}
-          description={t(
-            "model.previewDescription",
-            "Explora el volumen general antes de entrar al estudio de materiales, niveles y entorno.",
-          )}
-          actions={
-            <Link
-              href={`/projects/${projectId}/model?mode=edit`}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#2563eb] px-4 text-xs font-semibold text-white"
-            >
-              <Maximize2 size={15} />{" "}
-              {t("model.openStudio", "Abrir estudio 3D")}
-            </Link>
-          }
-        />
-        {data.blueprint.cad && (
-          <details className="cad-note">
-            <summary>
-              Reconstrucción CAD · propuesta para revisión
-              {!data.blueprint.cad.unitConfirmed && " · unidades pendientes"}
-            </summary>
-            <p>
-              Revisa plantas, alturas y función de las capas en el editor 2D.
-              Las aberturas se vinculan a sus muros. Los bloques identificados
-              se representan con mobiliario paramétrico; los símbolos ambiguos
-              se conservan como trazado, sin inventar su forma. La
-              reconstrucción requiere revisión; no constituye un modelo BIM
-              validado.
-              {!data.blueprint.cad.unitConfirmed &&
-                " La unidad del dibujo todavía no está confirmada."}
-            </p>
-          </details>
-        )}
-        {!!data.blueprint.reconstruction && (
-          <details className="cad-note">
-            <summary>
-              Interpretación: {data.blueprint.walls.length} muros ·{" "}
-              {data.blueprint.fixtures?.length ?? 0} elementos de mobiliario y
-              equipo
-            </summary>
-            <p>
-              {data.blueprint.reconstruction.unresolvedSymbols ?? 0} grupos de
-              símbolos aún sin clasificar. Los objetos generados conservan la
-              huella del plano; sus alturas y acabados son propuestas, no datos
-              BIM.
-            </p>
-            {!!data.blueprint.reconstruction.inferredLayers?.length && (
-              <p>
-                Capas propuestas por geometría:{" "}
-                {data.blueprint.reconstruction.inferredLayers.join(", ")}.
-                Confirma su función en el editor 2D.
-              </p>
-            )}
-            <Link href={`/projects/${projectId}/editor?mode=edit`}>
-              Revisar unidades, capas y plantas
-            </Link>
-          </details>
-        )}
-        <Panel className="mt-6 overflow-hidden">
-          <div className="flex min-h-14 items-center justify-between gap-3 border-b border-[#dfe2d9] px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-[#4d9a6a]" />
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-[.14em]">
-                {t("model.navigablePreview", "Vista navegable")}
-              </span>
-            </div>
-            <span className="rounded-lg bg-[#eceee8] px-2 py-1 text-[10px] font-semibold">
-              {levelCount} {t(levelCount === 1 ? "pm.level" : "pm.levels")}
-            </span>
-          </div>
-          <div className="relative h-[72vh] min-h-[560px]">
-            <BuildingScene
-              blueprint={data.blueprint}
-              floors={levelCount}
-              material="Concrete"
-              renderSettings={renderSettings}
-              lighting="Day"
-              cameraPreset="Isometric"
-              modelViewMode="Architecture"
-              showRoof={false}
-              isolatedLevel="All"
-            />
-            <div className="pointer-events-none absolute left-4 top-4 rounded-xl border border-white/40 bg-[#111815]/75 px-3 py-2 font-mono text-[9px] uppercase tracking-wider text-white backdrop-blur">
-              Órbita · rueda para zoom · arrastra para rotar
-            </div>
-            <Link
-              href={`/projects/${projectId}/model?mode=edit`}
-              className="model-preview-expand"
-            >
-              <Maximize2 size={15} />{" "}
-              {t("model.expandAndConfigure", "Expandir y configurar")}
-            </Link>
-          </div>
-          <div className="model-preview-summary">
-            <span>
-              <Building2 size={15} /> {data.blueprint.rooms.length}{" "}
-              {t("model.rooms", "ambientes")}
-            </span>
-            <span>
-              <Layers3 size={15} /> {data.blueprint.walls.length}{" "}
-              {t("model.walls", "muros")}
-            </span>
-            <span>
-              <BoxSelect size={15} /> {levelCount}{" "}
-              {t(levelCount === 1 ? "pm.level" : "pm.levels")}
-            </span>
-          </div>
-        </Panel>
-      </div>
-    );
-  }
-
   return (
     <div className="workspace-focus-surface model-focus-shell">
       <PageHeader
         className="model-focus-header"
         eyebrow={`Modelo 3D · ${data.project.name}`}
-        title="Estudio espacial"
-        description="Navega el modelo generado desde el plano semántico, compara acabados y prepara una presentación arquitectónica."
+        title="Estudio del modelo"
+        description="Selecciona elementos, comprueba sus medidas y revisa su origen en el plano."
         actions={
           <>
             <Link
-              href={`/projects/${projectId}/model`}
+              href={`/projects/${projectId}`}
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9ddd4] bg-[#fbfbf7] px-3.5 text-xs font-semibold"
             >
-              {t("model.exitStudio", "Salir del estudio")}
+              Volver al proyecto
             </Link>
             <Link
-              href={`/projects/${projectId}/simulation`}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#ff6a2b] px-4 text-xs font-semibold text-white"
+              href={`/projects/${projectId}/editor?mode=edit`}
+              className="pm-button pm-primary"
             >
-              <Activity size={15} /> Simular sismo
+              <BoxSelect size={15} /> Plano 2D
             </Link>
           </>
         }
       />
       <div className="model-site-strip">
-        <GlobalSiteSelector
-          projectId={projectId}
-          onSelectionChange={setSiteSelection}
-        />
-        {data.blueprint.cad && (
-          <details className="cad-note">
-            <summary>
-              Propuesta 3D · {data.blueprint.fixtures?.length ?? 0} objetos
-              identificados ·{" "}
-              {data.blueprint.reconstruction?.unresolvedSymbols ?? 0} símbolos
-              pendientes
-            </summary>
-            <p>
-              La geometría procede del dibujo. Alturas, acabados y modelos de
-              mobiliario son aproximaciones que necesitan revisión.{" "}
-              {!data.blueprint.cad.unitConfirmed &&
-                "Falta confirmar la unidad del CAD."}
-            </p>
-            <Link href={`/projects/${projectId}/editor?mode=edit`}>
-              Revisar interpretación en 2D
-            </Link>
-          </details>
+        {showTerrain ? (
+          <GlobalSiteSelector
+            projectId={projectId}
+            onSelectionChange={setSiteSelection}
+          />
+        ) : (
+          <div className="model-document-strip">
+            <span>
+              <Layers3 size={15} />{" "}
+              {data.blueprint.cad?.sourceName ?? "Plano del proyecto"}
+            </span>
+            <span>
+              {levelCount} {levelCount === 1 ? "nivel" : "niveles"} · Propuesta
+              para revisión
+            </span>
+          </div>
         )}
       </div>
       <div className="model-workbench">
@@ -356,6 +232,10 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               renderSettings={renderSettings}
               showRoof={showRoof}
               isolatedLevel={isolatedLevel}
+              selectedElementId={selectedElementId}
+              onSelectElement={
+                camera === "Walkthrough" ? undefined : setSelectedElementId
+              }
               siteSelection={
                 showTerrain ? (siteSelection ?? undefined) : undefined
               }
@@ -376,29 +256,14 @@ export function ModelScreen({ projectId }: { projectId: string }) {
         </Panel>
 
         <aside className="model-control-rail space-y-5">
-          <div className="plan-review-status">
-            <strong>
-              {t(
-                data.blueprint.calibration &&
-                  (!data.blueprint.cad || data.blueprint.cad.unitConfirmed)
-                  ? "render.calibrated"
-                  : "render.uncalibrated",
-              )}
-            </strong>
-            <p>
-              {t(
-                data.blueprint.review?.status === "reviewed"
-                  ? "render.reviewed"
-                  : "render.draft",
-              )}
-            </p>
-            <Link
-              className="pm-button"
-              href={`/projects/${projectId}/editor?mode=edit`}
-            >
-              {t("render.reviewPlan")}
-            </Link>
-          </div>
+          <ModelInspector
+            plan={data.blueprint}
+            selectedId={selectedElementId}
+            onSelect={(id) => {
+              setSelectedElementId(id);
+              if (id) setIsolatedLevel("All");
+            }}
+          />
           <Panel className="p-5">
             <div className="flex items-center gap-2">
               <Layers3 size={16} className="text-[#65716b]" />
@@ -595,16 +460,6 @@ export function ModelScreen({ projectId }: { projectId: string }) {
               <p className="text-xs leading-relaxed">{t("render.note")}</p>
             </div>
           </Panel>
-          <div className="rounded-2xl border border-[#d7dcd3] bg-[#eef0e9] p-4">
-            <div className="flex items-center gap-2">
-              <Layers3 size={14} />
-              <p className="text-[10px] font-semibold">Modelo procedural</p>
-            </div>
-            <p className="mt-1.5 text-[10px] leading-5 text-[#66736d]">
-              La geometría se reconstruye desde el JSON. IFC, GLB y acabados PBR
-              se incorporarán como adaptadores posteriores.
-            </p>
-          </div>
         </aside>
       </div>
     </div>
