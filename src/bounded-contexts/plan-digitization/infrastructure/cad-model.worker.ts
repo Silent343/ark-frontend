@@ -5,6 +5,7 @@ import {
 import type { Blueprint } from "../domain/entities/blueprint";
 import type { CadPlan } from "../domain/entities/cad-plan";
 import { enrichCadEvidence, detectCadRegions } from "../domain/cad-operations";
+import { applyCadGeometricProposals } from "../domain/cad-geometric-signatures";
 
 // Topology and raster connectivity are CPU work, independent of the interactive canvas.
 self.onmessage = (
@@ -12,6 +13,7 @@ self.onmessage = (
 ) => {
   try {
     const { base, cad, height } = event.data;
+    if (cad.unitConfirmed) applyCadGeometricProposals(cad);
     if ((base.reconstruction?.version ?? 0) < 3) {
       enrichCadEvidence(cad);
       // Repair only the known automatic crop bug; preserve explicitly edited region bounds and elevations.

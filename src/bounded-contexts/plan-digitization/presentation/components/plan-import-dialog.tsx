@@ -2,6 +2,7 @@
 import { createCadPlan } from "../../domain/cad-operations";
 import { compileCadModel } from "../../infrastructure/compile-cad-model";
 import { detectColoredSpaces } from "../../application/detect-colored-spaces";
+import { analyzeRasterPlan } from "../../infrastructure/analyze-raster-plan";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RotateCw, Upload, X } from "lucide-react";
@@ -17,8 +18,6 @@ import {
 import { mergeImportedReview } from "../../domain/plan-review";
 import { withoutSheetGeometry } from "../../domain/plan-provenance";
 import {
-  detectPlanLines,
-  findRectangularRooms,
   suggestOpeningsFromText,
   suggestRoomNames,
   suggestServicePoints,
@@ -27,6 +26,7 @@ import {
 import {
   loadPlanSource,
   preparePlanImage,
+  planPreviewCanvas,
   recognizePlanText,
   rectifyPlan,
   type RasterPlan,
@@ -124,22 +124,39 @@ export function PlanImportDialog({
   const [confirmedServices, setConfirmedServices] = useState<string[]>([]);
   const [confirmedOpenings, setConfirmedOpenings] = useState<string[]>([]);
   const [confirmedStairs, setConfirmedStairs] = useState<string[]>([]);
-  const prepared = useMemo(
-    () =>
-      source
-        ? preparePlanImage(
-            source.canvas,
-            rotation,
-            contrast,
-            source.cad ? false : denoise,
-            false,
-            source.cad ? 3000 : undefined,
-          )
-        : null,
-    [source, rotation, contrast, denoise],
-  );
+  const preparation = useMemo(() => {
+    if (!source) return { canvas: null, error: "" };
+    try {
+      return {
+        canvas: preparePlanImage(
+          source.canvas,
+          rotation,
+          contrast,
+          source.cad ? false : denoise,
+          false,
+          source.cad ? 3000 : undefined,
+        ),
+        error: "",
+      };
+    } catch (reason) {
+      return {
+        canvas: null,
+        error:
+          reason instanceof Error
+            ? reason.message
+            : "No se pudo preparar la imagen.",
+      };
+    }
+  }, [source, rotation, contrast, denoise]);
+  const prepared = preparation.canvas;
   const preview = useMemo(
-    () => prepared?.toDataURL("image/jpeg", source?.cad ? 0.82 : 0.9),
+    () =>
+      prepared
+        ? planPreviewCanvas(prepared).toDataURL(
+            "image/jpeg",
+            source?.cad ? 0.82 : 0.9,
+          )
+        : undefined,
     [prepared, source?.cad],
   );
   useEffect(() => {
@@ -306,38 +323,49 @@ export function PlanImportDialog({
         points as [PlanPoint, PlanPoint],
         Number(distance),
       );
-      const pixels = prepared
-        .getContext("2d")!
-        .getImageData(0, 0, prepared.width, prepared.height);
-      next.walls =
-        manual || discipline !== "architecture"
-          ? []
-          : detectPlanLines(
-              pixels.data,
-              prepared.width,
-              prepared.height,
-              threshold,
-            ).map((wall) => ({ ...wall, height: wallHeight }));
-      next.rooms =
-        manual || discipline !== "architecture"
-          ? []
-          : findRectangularRooms(next.walls, prepared.width, prepared.height);
-      next.slabs =
-        manual || discipline !== "architecture"
-          ? []
-          : detectColoredSpaces(
-              pixels.data,
-              prepared.width,
-              prepared.height,
-              levelId,
-            );
+      let tileCount = 0;
+      if (!manual && discipline === "architecture") {
+        const analysis = await analyzeRasterPlan(prepared, {
+          threshold,
+          wallHeight,
+          levelId,
+          metersPerPixel: next.calibration!.metersPerUnit,
+          signal: operation.signal,
+          onProgress: (fraction) => setProgress(fraction * 0.7),
+        });
+        next.walls = analysis.walls;
+        next.rooms = analysis.rooms;
+        next.slabs = analysis.slabs;
+        tileCount = analysis.tileCount;
+        // Color is supplementary floor evidence, sampled separately from structural detection.
+        if (!next.slabs.length) {
+          const thumbnail = planPreviewCanvas(prepared),
+            scaleX = prepared.width / thumbnail.width,
+            scaleY = prepared.height / thumbnail.height;
+          const pixels = thumbnail
+            .getContext("2d")!
+            .getImageData(0, 0, thumbnail.width, thumbnail.height);
+          next.slabs = detectColoredSpaces(
+            pixels.data,
+            thumbnail.width,
+            thumbnail.height,
+            levelId,
+          ).map((s) => ({
+            ...s,
+            polygon: s.polygon.map(([x, y]) => [x * scaleX, y * scaleY]),
+            holes: s.holes.map((h) =>
+              h.map(([x, y]) => [x * scaleX, y * scaleY]),
+            ),
+          }));
+        }
+      }
       // Embedded text positions are only valid before a geometric transformation.
       let text = rotation === 0 ? (source?.text ?? []) : [];
       if (ocr)
         text = await recognizePlanText(
           prepared,
           locale === "en" ? "eng" : locale === "pt" ? "por" : "spa",
-          setProgress,
+          (fraction) => setProgress(0.7 + fraction * 0.3),
           operation.signal,
         );
       if (operation.signal.aborted || generation.current !== run) return;
@@ -379,7 +407,7 @@ export function PlanImportDialog({
         reviewedIds: [],
         text,
         warnings: [
-          "orthogonal-baseline",
+          `tiled-lines-baseline:${tileCount}`,
           "openings-require-review",
           "text-proposals-require-confirmation",
           "heights-assumed",
@@ -1297,9 +1325,9 @@ export function PlanImportDialog({
               {t("import.processing")} {Math.round(progress * 100)}%
             </p>
           )}
-          {error && (
+          {(error || preparation.error) && (
             <p role="alert" className="pm-alert pm-danger">
-              {error}
+              {error || preparation.error}
             </p>
           )}
           {source && !source.cad && viewType !== "plan" && (

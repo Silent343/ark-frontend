@@ -256,6 +256,10 @@ export function CadEditor({
           if (current.current === plan) {
             changed.current = false;
             setDirty(false);
+            if (next.cad) {
+              current.current = next.cad;
+              setPlan(next.cad);
+            }
           }
         })
         .catch((error: Error) => {
@@ -290,6 +294,7 @@ export function CadEditor({
   }, [selectedId]);
   function editEntity(patch: Partial<CadEntity>) {
     if (!selected) return;
+    if (patch.role !== undefined) patch = { ...patch, roleSource: "manual" };
     remember();
     update({
       ...plan,
@@ -1332,7 +1337,8 @@ export function CadEditor({
       <footer className="cad-editor-footer">
         <span>
           {plan.entities.length.toLocaleString()} entidades ·{" "}
-          {plan.layers.length} capas · {plan.regions.length} {plan.regions.length===1?"vista":"vistas"}
+          {plan.layers.length} capas · {plan.regions.length}{" "}
+          {plan.regions.length === 1 ? "vista" : "vistas"}
         </span>
         <span role="status">
           {message ||

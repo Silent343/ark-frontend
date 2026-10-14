@@ -11,13 +11,27 @@ export interface RasterPlan {
     layers: Array<{ name: string; visible: boolean; count: number }>;
     skipped: Record<string, number>;
     entityCount: number;
-    renderLayers: (visibleLayers: string[]) => Promise<{ canvas: HTMLCanvasElement; text: PlanReview["text"] }>;
+    renderLayers: (
+      visibleLayers: string[],
+    ) => Promise<{ canvas: HTMLCanvasElement; text: PlanReview["text"] }>;
     dispose: () => void;
   };
 }
 const MAX_SIDE = 1400;
+const MAX_ANALYSIS_PIXELS = 32_000_000;
 
 export function createPlanCanvas(width: number, height: number) {
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width < 1 ||
+    height < 1 ||
+    width * height > MAX_ANALYSIS_PIXELS ||
+    Math.max(width, height) > 16384
+  )
+    throw new Error(
+      "La región supera el presupuesto de análisis (32 megapíxeles). Exporta o recorta una planta; no se reducirá su resolución automáticamente.",
+    );
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width));
   canvas.height = Math.max(1, Math.round(height));
@@ -51,10 +65,8 @@ export async function loadPlanSource(
       const page = await document.getPage(
         Math.max(1, Math.min(document.numPages, pageNumber)),
       );
-      const base = page.getViewport({ scale: 1 });
-      const viewport = page.getViewport({
-        scale: MAX_SIDE / Math.max(base.width, base.height),
-      });
+      // 200 DPI analysis preserves small symbols; display thumbnails are generated separately.
+      const viewport = page.getViewport({ scale: 200 / 72 });
       const { canvas, context } = createPlanCanvas(
         viewport.width,
         viewport.height,
@@ -92,11 +104,7 @@ export async function loadPlanSource(
     throw new Error("Use PDF, PNG, JPEG or WebP.");
   const bitmap = await createImageBitmap(file);
   try {
-    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-    const { canvas, context } = createPlanCanvas(
-      bitmap.width * scale,
-      bitmap.height * scale,
-    );
+    const { canvas, context } = createPlanCanvas(bitmap.width, bitmap.height);
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     return { canvas, pageCount: 1, text: [] };
   } finally {
@@ -111,7 +119,7 @@ export function preparePlanImage(
   contrast: number,
   denoise: boolean,
   grayscale = true,
-  maxSide = MAX_SIDE,
+  maxSide = Number.POSITIVE_INFINITY,
 ) {
   const angle = (degrees * Math.PI) / 180;
   const boundW =
@@ -150,6 +158,20 @@ export function preparePlanImage(
       }
     context.putImageData(image, 0, 0);
   }
+  return canvas;
+}
+
+/** Display-only thumbnail. Geometry and calibration stay in full analysis coordinates. */
+export function planPreviewCanvas(
+  source: HTMLCanvasElement,
+  maxSide = MAX_SIDE,
+) {
+  const ratio = Math.min(1, maxSide / Math.max(source.width, source.height));
+  const { canvas, context } = createPlanCanvas(
+    source.width * ratio,
+    source.height * ratio,
+  );
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 

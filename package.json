@@ -12,6 +12,8 @@
     "test:detector": "node --test scripts/test-detector-evaluation.mjs",
     "test:coordination": "node scripts/test-drawing-coordination.mjs",
     "test:neural": "node scripts/test-neural-plan.mjs",
+    "test:canonical": "node scripts/test-canonical-pipeline.mjs",
+    "test:canonical:browser": "node scripts/test-canonical-browser.mjs",
     "test:cad:references": "node scripts/test-cad-references.mjs",
     "evaluate:detector": "node scripts/evaluate-detector.mjs",
     "preinfer:cad": "npm run prepare:plans",

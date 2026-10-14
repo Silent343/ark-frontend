@@ -18,6 +18,8 @@ interface CadEntityBase {
   /** Original block identity survives explosion; used as evidence, never as a mesh. */
   blockName?: string;
   role?: CadRole;
+  /** Keeps automatic reclassification from overwriting an explicit entity mapping. */
+  roleSource?: "geometry" | "name" | "manual";
 }
 export type CadEntity = CadEntityBase &
   (

@@ -99,8 +99,33 @@ export function detectPlanLines(
   // 45° runs are proposals too; incomplete sloped rooms remain unclassified.
   const bounded = [
     ...walls,
-    ...detectDiagonalWalls(ink, width, height, minimum),
-  ].slice(0, 400);
+    ...detectDiagonalWalls(ink, width, height, minimum).filter((diagonal) => {
+      // Thick L/T corners contain diagonal ink runs inside the existing wall union.
+      // Require independent support outside that union before proposing another wall.
+      for (let sample = 0; sample <= 12; sample++) {
+        const t = sample / 12,
+          x = diagonal.start[0] + (diagonal.end[0] - diagonal.start[0]) * t,
+          y = diagonal.start[1] + (diagonal.end[1] - diagonal.start[1]) * t;
+        const covered = walls.some((wall) => {
+          const dx = wall.end[0] - wall.start[0],
+            dy = wall.end[1] - wall.start[1],
+            len = Math.hypot(dx, dy);
+          if (!len) return false;
+          const along =
+            ((x - wall.start[0]) * dx + (y - wall.start[1]) * dy) / len;
+          const lateral =
+            Math.abs((x - wall.start[0]) * dy - (y - wall.start[1]) * dx) / len;
+          return (
+            along >= -wall.thickness / 2 &&
+            along <= len + wall.thickness / 2 &&
+            lateral <= wall.thickness / 2 + 1
+          );
+        });
+        if (!covered) return true;
+      }
+      return false;
+    }),
+  ];
   return bounded.map((wall) => ({
     ...wall,
     start: snap(wall.start, wall, bounded),
@@ -185,7 +210,7 @@ function detectDiagonalWalls(
     }
     flush();
   }
-  return found.slice(0, 100);
+  return found;
 }
 
 function snap(

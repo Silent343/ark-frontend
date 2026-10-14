@@ -12,9 +12,13 @@ export function useCadReconstruction(source?: Blueprint) {
     error?: string;
   }>();
   const needsUpgrade =
-    !!source?.cad && (source.reconstruction?.version ?? 0) < 6;
+    !!source?.cad?.unitConfirmed &&
+    source.cad.regions.some(
+      (r) => r.enabled && (!r.viewType || r.viewType === "plan"),
+    ) &&
+    (source.reconstruction?.version ?? 0) < 6;
   useEffect(() => {
-    if (!source?.cad || (source.reconstruction?.version ?? 0) >= 6) return;
+    if (!source?.cad || !needsUpgrade) return;
     const controller = new AbortController();
     void compileCadModel(source, source.cad, 2.8, controller.signal)
       .then((blueprint) => {
@@ -25,7 +29,7 @@ export function useCadReconstruction(source?: Blueprint) {
           setResult({ source, error: error.message });
       });
     return () => controller.abort();
-  }, [source]);
+  }, [source, needsUpgrade]);
   const current = result?.source === source ? result : undefined;
   const raw = needsUpgrade ? current?.blueprint : source;
   const resolved = useMemo(

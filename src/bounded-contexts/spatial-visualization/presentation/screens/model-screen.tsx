@@ -38,6 +38,8 @@ import { useI18n } from "@/shared/i18n/presentation/i18n-provider";
 import { useRenderSettings } from "../use-render-settings";
 import { useCadReconstruction } from "../use-cad-reconstruction";
 import { ModelInspector } from "../components/model-inspector";
+import { useCanonicalModel } from "../use-canonical-model";
+import { ModelPreparationPanel } from "../components/model-preparation-panel";
 
 const BuildingScene = dynamic(
   () =>
@@ -82,10 +84,17 @@ export function ModelScreen({ projectId }: { projectId: string }) {
     reload,
   } = useProjectWorkspace(projectId);
   const reconstruction = useCadReconstruction(workspace?.blueprint);
+  const canonical = useCanonicalModel(
+    reconstruction.blueprint ?? workspace?.blueprint,
+    reconstruction.correspondenceResults,
+  );
   const data = workspace
     ? {
         ...workspace,
-        blueprint: reconstruction.blueprint ?? workspace.blueprint,
+        blueprint:
+          canonical.blueprint ??
+          reconstruction.blueprint ??
+          workspace.blueprint,
       }
     : null;
   const { t } = useI18n();
@@ -122,26 +131,14 @@ export function ModelScreen({ projectId }: { projectId: string }) {
       />
     );
   const levelCount = Math.max(1, data.blueprint.levels.length);
-  if (
-    !data.blueprint.walls.length &&
-    !data.blueprint.columns.length &&
-    !data.blueprint.roofs?.length
-  )
+  if (canonical.report && canonical.report.state !== "RECONSTRUCTED")
     return (
-      <div className="pm-card pm-empty">
-        <BoxSelect size={32} />
-        <h1>Prepara la geometría del modelo</h1>
-        <p>
-          Abre el plano 2D para importar el CAD y asignar sus plantas y capas al
-          edificio.
-        </p>
-        <Link
-          className="pm-button pm-primary"
-          href={`/projects/${projectId}/editor?mode=edit&import=1`}
-        >
-          Abrir editor 2D
-        </Link>
-      </div>
+      <ModelPreparationPanel
+        plan={data.blueprint}
+        report={canonical.report}
+        error={canonical.error}
+        onRetry={reload}
+      />
     );
 
   return (
@@ -257,6 +254,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
 
         <aside className="model-control-rail space-y-5">
           <ModelInspector
+            canonicalGraph={canonical.graph}
             sourcePlan={reconstruction.rawBlueprint}
             plan={data.blueprint}
             selectedId={selectedElementId}

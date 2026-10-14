@@ -2,6 +2,7 @@ export { compileCadBlueprint } from "./cad-reconstruction";
 import { floorElevations, stairFlights } from "./cad-reconstruction";
 import { cleanCadText } from "./cad-text";
 import { anonymousWallLayer, blockRole, isDoorArc } from "./cad-evidence";
+import { applyCadGeometricProposals } from "./cad-geometric-signatures";
 import type {
   CadBounds,
   CadEntity,
@@ -360,7 +361,7 @@ export function enrichCadEvidence(plan: CadPlan): void {
     if (
       layer.reviewed ||
       layer.role !== "reference" ||
-      !/^\d+$/.test(layer.name)
+      /cota|text|eje|demol|proyecc|hatch|relleno|defpoint/i.test(layer.name)
     )
       continue;
     if (anonymousWallLayer(entities, units)) layer.role = "wall";
@@ -385,15 +386,20 @@ export function enrichCadEvidence(plan: CadPlan): void {
   for (const e of plan.entities) {
     if (e.kind === "text" || e.group?.includes("dimension")) continue;
     const layer = plan.layers.find((l) => l.name === e.layer);
-    if (layer?.reviewed) continue;
-    if (e.blockName) e.role = blockRole(e.blockName);
     if (
-      !e.role &&
-      layer?.role === "reference" &&
-      /^\d+$/.test(layer.name) &&
-      isDoorArc(e, units)
+      layer?.reviewed ||
+      e.roleSource === "manual" ||
+      (e.role && !e.roleSource)
     )
+      continue;
+    if (e.blockName && (!e.role || e.roleSource === "name")) {
+      e.role = blockRole(e.blockName);
+      e.roleSource = e.role ? "name" : undefined;
+    }
+    if (!e.role && layer?.role === "reference" && isDoorArc(e, units)) {
       e.role = "door";
+      e.roleSource = "geometry";
+    }
   }
   const arcs = plan.entities.filter(
     (e) => e.role === "door" && isDoorArc(e, units),
@@ -404,7 +410,6 @@ export function enrichCadEvidence(plan: CadPlan): void {
       e.role ||
       layer?.reviewed ||
       layer?.role !== "reference" ||
-      !/^\d+$/.test(e.layer) ||
       e.kind !== "path" ||
       e.points.length !== 4
     )
@@ -430,7 +435,10 @@ export function enrichCadEvidence(plan: CadPlan): void {
           ) < 0.08
         );
       })
-    )
+    ) {
       e.role = "door";
+      e.roleSource = "geometry";
+    }
   }
+  applyCadGeometricProposals(plan);
 }

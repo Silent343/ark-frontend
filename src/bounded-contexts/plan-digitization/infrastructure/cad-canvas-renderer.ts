@@ -11,6 +11,7 @@ export function drawCad(
   plan: CadPlan,
   view: { x: number; y: number; scale: number; width: number; height: number },
   selectedId?: string | null,
+  highlightIds?: ReadonlySet<string>,
 ) {
   context.fillStyle = "#fffefa";
   context.fillRect(0, 0, view.width, view.height);
@@ -35,8 +36,12 @@ export function drawCad(
       b.minY > bounds.maxY
     )
       return;
-    context.strokeStyle = context.fillStyle = selected ? "#2563eb" : e.color;
-    context.lineWidth = selected ? 2.5 : 0.85;
+    context.strokeStyle = context.fillStyle = selected
+      ? "#2563eb"
+      : highlightIds?.has(e.id)
+        ? "#b96b19"
+        : e.color;
+    context.lineWidth = selected ? 2.5 : highlightIds?.has(e.id) ? 1.4 : 0.85;
     if (e.kind === "path") {
       context.beginPath();
       context.moveTo(px(e.points[0]), py(e.points[1]));

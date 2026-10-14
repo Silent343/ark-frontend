@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CadBounds, CadPlan } from "../../domain/entities/cad-plan";
 import { cadEntityBounds } from "../../domain/cad-operations";
 import { drawCad, fitCadView } from "../../infrastructure/cad-canvas-renderer";
@@ -13,6 +13,7 @@ interface Props {
   onRegionSelected?: (bounds: CadBounds) => void;
   fitBounds?: CadBounds;
   fitKey?: number | string;
+  highlightIds?: string[];
   onSelect?: (id: string | null) => void;
   onMove?: (id: string, dx: number, dy: number) => void;
   onMoveEnd?: () => void;
@@ -27,10 +28,15 @@ export function CadPlanCanvas({
   onRegionSelected,
   fitBounds,
   fitKey,
+  highlightIds,
   onSelect,
   onMove,
   onMoveEnd,
 }: Props) {
+  const highlighted = useMemo(
+    () => (highlightIds ? new Set(highlightIds) : undefined),
+    [highlightIds],
+  );
   const canvas = useRef<HTMLCanvasElement>(null),
     container = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
@@ -80,8 +86,8 @@ export function CadPlanCanvas({
     const ctx = el.getContext("2d");
     if (!ctx) return;
     ctx.scale(ratio, ratio);
-    drawCad(ctx, plan, { ...view, ...size }, selectedId);
-  }, [plan, view, size, selectedId]);
+    drawCad(ctx, plan, { ...view, ...size }, selectedId, highlighted);
+  }, [plan, view, size, selectedId, highlighted]);
   // Native wheel listener must be non-passive to keep wheel zoom inside the editor.
   useEffect(() => {
     const el = canvas.current;

@@ -6,6 +6,8 @@ import type { Blueprint } from "@/bounded-contexts/plan-digitization";
 import { modelIntegrityIssues } from "@/bounded-contexts/plan-digitization/domain/model-integrity";
 import { resolveDrawingCorrespondences } from "@/bounded-contexts/plan-digitization/domain/drawing-coordination";
 import { modelDetectionExport } from "@/bounded-contexts/plan-digitization/domain/detection-sample";
+import { preparationReport } from "@/bounded-contexts/plan-digitization/domain/canonical/preparation";
+import type { CanonicalFloorPlanGraph } from "@/bounded-contexts/plan-digitization/domain/canonical/types";
 import {
   inspectModel,
   modelReadiness,
@@ -16,17 +18,20 @@ export function ModelInspector({
   selectedId,
   onSelect,
   sourcePlan = plan,
+  canonicalGraph,
 }: {
   plan: Blueprint;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   sourcePlan?: Blueprint;
+  canonicalGraph?: CanonicalFloorPlanGraph;
 }) {
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState("");
   const elements = useMemo(() => inspectModel(plan), [plan]);
   const checks = useMemo(() => modelReadiness(plan), [plan]);
   const issues = useMemo(() => modelIntegrityIssues(plan), [plan]);
+  const preparation = useMemo(() => preparationReport(plan), [plan]);
   const correspondence = useMemo(
     () => resolveDrawingCorrespondences(sourcePlan),
     [sourcePlan],
@@ -63,6 +68,19 @@ export function ModelInspector({
     a.click();
     URL.revokeObjectURL(url);
   }
+  function exportCanonical() {
+    if (!canonicalGraph) return;
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(canonicalGraph, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ark-modelo-canonico-${plan.projectId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
   return (
     <section
       className="model-inspector-panel"
@@ -77,6 +95,28 @@ export function ModelInspector({
         Selecciona un elemento en el 3D o búscalo aquí para revisar sus medidas
         y su origen.
       </p>
+      {canonicalGraph && (
+        <div className="model-canonical-summary">
+          <strong>Geometría común CAD / raster</strong>
+          <span>
+            {canonicalGraph.elements.length} elementos ·{" "}
+            {canonicalGraph.levels.reduce(
+              (n, l) => n + l.topology.faces.filter((f) => !f.exterior).length,
+              0,
+            )}{" "}
+            contornos cerrados
+          </span>
+          {preparation.coverage !== null && (
+            <small>
+              {Math.round(preparation.coverage * 100)} % de entidades con
+              categoría asignada. No mide exactitud.
+            </small>
+          )}
+          <button type="button" className="pm-button" onClick={exportCanonical}>
+            Exportar modelo canónico · JSON
+          </button>
+        </div>
+      )}
       {plan.cad && (
         <Link className="pm-button" href={`${editor}&panel=recognition`}>
           Reconocimiento con IA

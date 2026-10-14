@@ -623,3 +623,144 @@
   border-radius: 8px;
   border: 1px solid #d9ddd4;
 }
+
+.model-preparation {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 28px;
+}
+.model-preparation header {
+  margin-bottom: 24px;
+}
+.model-preparation h1 {
+  margin: 8px 0;
+  color: #18312c;
+  font-size: clamp(24px, 3vw, 32px);
+  line-height: 1.2;
+}
+.model-preparation header p,
+.model-preparation-coverage p {
+  color: #64736b;
+  font-size: 13px;
+}
+.model-preparation-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.model-preparation-steps a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dfe4dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #234138;
+  text-decoration: none;
+}
+.model-preparation-steps a:hover {
+  border-color: #6b8e7d;
+  background: #f7faf7;
+}
+.model-preparation-steps span {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+.model-preparation-steps small {
+  display: block;
+  margin-top: 4px;
+  color: #6d786f;
+  font-size: 11px;
+  font-weight: 400;
+}
+.model-preparation-coverage {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+.model-preparation-coverage span {
+  color: #59685e;
+}
+.model-preparation-preview {
+  height: min(55vh, 540px);
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid #dfe4dc;
+  border-radius: 12px;
+  background: #fffefa;
+}
+.model-preparation-preview > div {
+  height: 100%;
+}
+.model-preparation-highlight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 20px;
+  color: #80511e;
+  font-size: 12px;
+}
+.model-preparation-issues {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: 10px;
+  background: #fff8ed;
+  border: 1px solid #e9d8bc;
+}
+.model-preparation-issues h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #67481d;
+}
+.model-preparation-issues ul {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.model-preparation-issues li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.model-preparation-issues a {
+  white-space: nowrap;
+  text-decoration: underline;
+  color: #77551f;
+}
+.model-preparation footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+.model-canonical-summary {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 9px;
+  background: #eef3ed;
+  font-size: 12px;
+}
+.model-canonical-summary small {
+  color: #69786b;
+  line-height: 1.5;
+}
+@media (max-width: 720px) {
+  .model-preparation {
+    padding: 18px;
+  }
+  .model-preparation-steps {
+    grid-template-columns: 1fr;
+  }
+  .model-preparation-issues li {
+    flex-direction: column;
+  }
+}
