@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "preaudit:corpus": "npm run prepare:plans",
+    "audit:corpus": "node scripts/audit-cad-corpus.mjs",
+    "prepare:review": "node scripts/prepare-cad-review-batch.mjs",
+    "test:corpus": "node scripts/test-corpus-audit.mjs",
+    "test:corpus:browser": "node scripts/test-corpus-review-browser.mjs",
     "test:families": "node scripts/test-fixture-families.mjs",
     "prepare:plans": "node scripts/prepare-plan-assets.mjs",
     "predev": "npm run prepare:plans",
