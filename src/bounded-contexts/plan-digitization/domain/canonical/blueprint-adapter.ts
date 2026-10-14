@@ -1,5 +1,6 @@
 import type { Blueprint } from "../entities/blueprint";
 import { metersPerUnit } from "../plan-calibration";
+import { familyForFixture, validFamilyAssignment } from "../fixture-families";
 import { buildPlanarGraph } from "./planar-graph";
 import { polygonProblem } from "./polygon-validation";
 import { contains, signedArea } from "../cad-topology";
@@ -428,11 +429,18 @@ export function canonicalFromBlueprint(
       );
       continue;
     }
+    const selection = plan.fixtureFamilies?.[f.id];
+    const representation =
+      validFamilyAssignment(selection) &&
+      familyForFixture(f, plan.fixtureFamilies)?.id === selection.familyId
+        ? selection
+        : undefined;
     graph.elements.push({
       ...base(f),
       kind: "furniture",
       category: f.kind ?? "unclassified",
-      catalogId: null,
+      catalogId: representation?.familyId ?? null,
+      representation,
       footprint: {
         outer: rectangle(
           f.x,

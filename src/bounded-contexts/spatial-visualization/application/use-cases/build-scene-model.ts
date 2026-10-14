@@ -36,10 +36,21 @@ export class BuildSceneModel {
         [roof.x + roof.width, roof.y + roof.depth],
       ]),
       ...(blueprint.services ?? []).map((point) => [point.x, point.y]),
-      ...(blueprint.fixtures ?? []).flatMap((f) => [
-        [f.x - f.width / 2, f.y - f.depth / 2],
-        [f.x + f.width / 2, f.y + f.depth / 2],
-      ]),
+      ...(blueprint.fixtures ?? []).flatMap((f) => {
+        const angle = ((f.rotation ?? 0) * Math.PI) / 180;
+        const dx =
+          (Math.abs(Math.cos(angle)) * f.width +
+            Math.abs(Math.sin(angle)) * f.depth) /
+          2;
+        const dy =
+          (Math.abs(Math.sin(angle)) * f.width +
+            Math.abs(Math.cos(angle)) * f.depth) /
+          2;
+        return [
+          [f.x - dx, f.y - dy],
+          [f.x + dx, f.y + dy],
+        ];
+      }),
     ];
     if (!coordinates.length)
       coordinates.push([0, 0], [blueprint.width, blueprint.height]);

@@ -40,6 +40,7 @@ import { useCadReconstruction } from "../use-cad-reconstruction";
 import { ModelInspector } from "../components/model-inspector";
 import { useCanonicalModel } from "../use-canonical-model";
 import { ModelPreparationPanel } from "../components/model-preparation-panel";
+import { planDigitization } from "@/bounded-contexts/plan-digitization/public";
 
 const BuildingScene = dynamic(
   () =>
@@ -110,6 +111,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(
     null,
   );
+  const [familyNotice, setFamilyNotice] = useState("");
   const [siteSelection, setSiteSelection] =
     useState<ConstructionSiteSelection | null>(null);
   if (loading) return <ModelSkeleton />;
@@ -253,7 +255,37 @@ export function ModelScreen({ projectId }: { projectId: string }) {
         </Panel>
 
         <aside className="model-control-rail space-y-5">
+          {familyNotice && (
+            <p className="model-inspector-help" role="status">
+              {familyNotice}
+            </p>
+          )}
           <ModelInspector
+            onSaveFamily={
+              !("role" in data.project) ||
+              !["owner", "architect", "collaborator"].includes(
+                String(data.project.role),
+              )
+                ? undefined
+                : async (ids, assignment) => {
+                    if (!workspace) return;
+                    const choices = new Map(
+                      Object.entries(workspace.blueprint.fixtureFamilies ?? {}),
+                    );
+                    for (const id of ids) {
+                      if (assignment) choices.set(id, assignment);
+                      else choices.delete(id);
+                    }
+                    await planDigitization.saveBlueprint.execute({
+                      ...workspace.blueprint,
+                      fixtureFamilies: Object.fromEntries(choices),
+                    });
+                    setFamilyNotice(
+                      `Representación guardada en ${ids.length} ${ids.length === 1 ? "elemento" : "elementos"}.`,
+                    );
+                    await reload();
+                  }
+            }
             canonicalGraph={canonical.graph}
             sourcePlan={reconstruction.rawBlueprint}
             plan={data.blueprint}

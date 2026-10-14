@@ -178,6 +178,8 @@ export interface PlanReview {
 
 /** Shared, calibrated geometry consumed by both editors and the procedural renderer. */
 export interface Blueprint {
+  /** Manual representation choices survive rebuilding source CAD; they do not validate detections. */
+  fixtureFamilies?: import("../fixture-families").FixtureFamilyAssignments;
   correspondences?: import("../drawing-coordination").DrawingCorrespondence[];
   intent?: "visualization" | "coordination" | "bim-preparation";
   elementEvidence?: Record<string, ElementEvidence>;

@@ -96,6 +96,8 @@ export interface CanonicalFurniture extends CanonicalElement {
   kind: "furniture";
   category: string;
   catalogId: string | null;
+  /** Display choice; does not change the element's architectural validation status. */
+  representation?: import("../fixture-families").FixtureFamilyAssignment;
   footprint: Polygon2D;
   height: DimensionValue<number>;
 }

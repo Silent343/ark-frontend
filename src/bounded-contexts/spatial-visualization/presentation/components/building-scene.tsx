@@ -14,7 +14,7 @@ import {
   PointerLockControls,
   Sky,
 } from "@react-three/drei";
-import { CadBuilding, FloorSurfaces } from "./cad-building";
+import { CadBuilding, FloorSurfaces, Furnishings } from "./cad-building";
 import {
   ACESFilmicToneMapping,
   CatmullRomCurve3,
@@ -251,6 +251,7 @@ function Building({
   interactive?: boolean;
 }) {
   const floorGroups = useRef<Array<Group | null>>([]);
+  const fixtureQuality = useRenderQuality();
   const finish = materialMap[material];
   const [openDoors, setOpenDoors] = useState<Set<string>>(new Set());
   const [hoveredService, setHoveredService] = useState<string | null>(null);
@@ -406,40 +407,13 @@ function Building({
                   </mesh>
                 ))}
                 {/* CAD furniture blocks stay linked to their source plan and active level. */}
-                {plan.fixtures?.map((item) => (
-                  <mesh
-                    key={item.id}
-                    onClick={
-                      onSelectElement
-                        ? (event) => {
-                            event.stopPropagation();
-                            onSelectElement(item.id);
-                          }
-                        : undefined
-                    }
-                    castShadow
-                    receiveShadow
-                    position={[
-                      (item.x - scene.centerX) / scene.scale,
-                      item.height / 2,
-                      (item.y - scene.centerY) / scene.scale,
-                    ]}
-                  >
-                    <boxGeometry
-                      args={[
-                        item.width / scene.scale,
-                        item.height,
-                        item.depth / scene.scale,
-                      ]}
-                    />
-                    <meshStandardMaterial
-                      color={
-                        item.id === selectedElementId ? "#44b8ff" : "#b8a78e"
-                      }
-                      roughness={0.8}
-                    />
-                  </mesh>
-                ))}
+                <Furnishings
+                  plan={plan}
+                  scene={scene}
+                  selectedId={selectedElementId}
+                  onSelectElement={onSelectElement}
+                  detail={fixtureQuality === "low" ? "low" : "standard"}
+                />
                 {plan.columns.map((column) => (
                   <mesh
                     key={`${floor}-${column.id}`}
@@ -988,7 +962,14 @@ export function BuildingScene(props: BuildingSceneProps) {
   const baseElevation = cameraFloors === 1 ? 0 : Math.min(...elevations);
   const height =
     (cameraFloors === 1 ? 0 : Math.max(...elevations) - baseElevation) +
-    Math.max(2.8, ...props.blueprint.walls.map((wall) => wall.height));
+    Math.max(
+      2.8,
+      ...props.blueprint.walls.map((wall) => wall.height),
+      ...(props.blueprint.fixtures ?? []).map(
+        (f) =>
+          f.height + (props.blueprint.fixtureFamilies?.[f.id]?.elevationM ?? 0),
+      ),
+    );
   const radius = Math.max(10, extent * 1.5);
   const azimuth = (settings.sunAzimuth * Math.PI) / 180,
     elevation = ((sunset ? 12 : settings.sunElevation) * Math.PI) / 180;
@@ -1127,6 +1108,7 @@ export function BuildingScene(props: BuildingSceneProps) {
         ) && <LotTerrain selection={props.siteSelection} />}
       {hasGeometry && cadModel ? (
         <CadBuilding
+          fixtureDetail={quality === "low" ? "low" : "standard"}
           selectedId={props.selectedElementId}
           onSelectElement={props.onSelectElement}
           blueprint={props.blueprint}

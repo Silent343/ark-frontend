@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:families": "node scripts/test-fixture-families.mjs",
     "prepare:plans": "node scripts/prepare-plan-assets.mjs",
     "predev": "npm run prepare:plans",
     "prebuild": "npm run prepare:plans",

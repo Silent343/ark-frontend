@@ -4,6 +4,12 @@ import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import {
   BufferAttribute,
   BufferGeometry,
+  BoxGeometry,
+  CylinderGeometry,
+  LatheGeometry,
+  SphereGeometry,
+  TorusGeometry,
+  Vector2,
   Color,
   ExtrudeGeometry,
   Object3D,
@@ -17,7 +23,10 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
 import { geometryOnLevel } from "@/bounded-contexts/plan-digitization/domain/plan-levels";
 import { buildSceneModel } from "../../application/use-cases/build-scene-model";
-import { buildFixtureParts } from "../../application/fixture-parts";
+import {
+  buildFixtureParts,
+  type FixtureShape,
+} from "../../application/fixture-parts";
 
 type Box = {
   id?: string;
@@ -28,23 +37,50 @@ type Box = {
   height: number;
   depth: number;
   rotation?: number;
+  tint?: string;
 };
 type Scene = ReturnType<typeof buildSceneModel.execute>;
 
-/** One unit cube and one material per batch, instead of one WebGL draw call per wall/frame/tread. */
+/** One shared primitive and material per batch, with selection kept at the source-element level. */
 function BoxBatch({
   boxes,
   material,
   onClick,
   shadows = true,
   selectedId,
+  shape = "box",
 }: {
   boxes: Box[];
   material: MeshStandardMaterialParameters;
   onClick?: (index: number) => void;
   shadows?: boolean;
   selectedId?: string | null;
+  shape?: FixtureShape;
 }) {
+  const geometry = useMemo(() => {
+    if (shape === "cylinder") return new CylinderGeometry(0.5, 0.5, 1, 16);
+    if (shape === "sphere") return new SphereGeometry(0.5, 16, 10);
+    if (shape === "ring")
+      return new TorusGeometry(0.41, 0.09, 6, 24)
+        .rotateX(Math.PI / 2)
+        .scale(1, 1 / 0.18, 1);
+    if (shape === "basin")
+      return new LatheGeometry(
+        [
+          new Vector2(0, -0.5),
+          new Vector2(0.3, -0.5),
+          new Vector2(0.47, 0.2),
+          new Vector2(0.5, 0.5),
+          new Vector2(0.44, 0.5),
+          new Vector2(0.38, 0.2),
+          new Vector2(0.25, -0.3),
+          new Vector2(0, -0.3),
+        ],
+        20,
+      );
+    return new BoxGeometry(1, 1, 1);
+  }, [shape]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
   const mesh = useRef<InstancedMesh>(null),
     invalidate = useThree((s) => s.invalidate),
     gl = useThree((s) => s.gl);
@@ -72,25 +108,16 @@ function BoxBatch({
   }, [boxes, invalidate, gl]);
   /* eslint-enable react-hooks/immutability */
   useLayoutEffect(() => {
-    if (!mesh.current || !selectedId) return;
+    if (!mesh.current) return;
     boxes.forEach((box, i) =>
       mesh.current!.setColorAt(
         i,
-        new Color(box.id === selectedId ? "#44b8ff" : "#ffffff"),
+        new Color(box.id === selectedId ? "#44b8ff" : (box.tint ?? "#ffffff")),
       ),
     );
     if (mesh.current.instanceColor)
       mesh.current.instanceColor.needsUpdate = true;
     invalidate();
-  }, [boxes, selectedId, invalidate]);
-  useLayoutEffect(() => {
-    if (mesh.current?.instanceColor && !selectedId) {
-      boxes.forEach((_, i) =>
-        mesh.current!.setColorAt(i, new Color("#ffffff")),
-      );
-      mesh.current.instanceColor.needsUpdate = true;
-      invalidate();
-    }
   }, [boxes, selectedId, invalidate]);
   if (!boxes.length) return null;
   return (
@@ -108,7 +135,7 @@ function BoxBatch({
           : undefined
       }
     >
-      <boxGeometry args={[1, 1, 1]} />
+      <primitive object={geometry} attach="geometry" />
       <meshStandardMaterial key={String(material.transparent)} {...material} />
     </instancedMesh>
   );
@@ -322,16 +349,18 @@ const glassMaterial = {
 const doorMaterial = { color: "#a0907e", roughness: 0.8 };
 const slabMaterial = { color: "#c9c9c3", roughness: 0.92 };
 
-function Furnishings({
+export function Furnishings({
   plan,
   scene,
   selectedId,
   onSelectElement,
+  detail = "standard",
 }: {
   plan: Blueprint;
   scene: Scene;
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
+  detail?: "low" | "standard";
 }) {
   const batches = useMemo(
     () =>
@@ -340,29 +369,42 @@ function Furnishings({
         scene.centerX,
         scene.centerY,
         scene.scale,
+        plan.fixtureFamilies,
+        detail,
       ),
-    [plan.fixtures, scene.centerX, scene.centerY, scene.scale],
+    [
+      plan.fixtures,
+      plan.fixtureFamilies,
+      detail,
+      scene.centerX,
+      scene.centerY,
+      scene.scale,
+    ],
   );
-  const finishes = {
-    wood: "#a88b69",
-    fabric: "#658080",
-    metal: "#60696c",
-    ceramic: "#edece6",
-    green: "#66805b",
-  };
   return (
     <>
-      {(Object.keys(batches) as Array<keyof typeof batches>).map((key) => (
+      {batches.map((batch) => (
         <BoxBatch
-          key={key}
-          boxes={batches[key]}
+          key={`${batch.finish}:${batch.shape}`}
+          boxes={batch.parts}
+          shape={batch.shape}
+          shadows={detail !== "low"}
           selectedId={selectedId}
           onClick={
             onSelectElement
-              ? (i) => onSelectElement(batches[key][i].id)
+              ? (i) => onSelectElement(batch.parts[i].id)
               : undefined
           }
-          material={{ color: finishes[key], roughness: 0.78 }}
+          material={{
+            color: "#ffffff",
+            roughness:
+              batch.finish === "ceramic"
+                ? 0.28
+                : batch.finish === "metal"
+                  ? 0.4
+                  : 0.8,
+            metalness: batch.finish === "metal" ? 0.45 : 0,
+          }}
         />
       ))}
     </>
@@ -379,6 +421,7 @@ function CadLevel({
   showRoof,
   selectedId,
   onSelectElement,
+  fixtureDetail,
 }: {
   plan: Blueprint;
   scene: Scene;
@@ -389,6 +432,7 @@ function CadLevel({
   showRoof: boolean;
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
+  fixtureDetail: "low" | "standard";
 }) {
   const [openDoors, setOpenDoors] = useState<Set<string>>(new Set());
   const batches = useMemo(() => {
@@ -534,6 +578,7 @@ function CadLevel({
           scene={scene}
           selectedId={selectedId}
           onSelectElement={onSelectElement}
+          detail={fixtureDetail}
         />
       )}
       {showRoof && (
@@ -630,6 +675,7 @@ export function CadBuilding({
   showRoof,
   selectedId,
   onSelectElement,
+  fixtureDetail = "standard",
 }: {
   blueprint: Blueprint;
   finish: MeshStandardMaterialParameters;
@@ -639,6 +685,7 @@ export function CadBuilding({
   showRoof: boolean;
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
+  fixtureDetail?: "low" | "standard";
   simulation?: { active: boolean; intensity: number; direction: "X" | "Y" };
 }) {
   const groups = useRef<Array<Group | null>>([]);
@@ -695,6 +742,7 @@ export function CadBuilding({
                 details={isolatedLevel !== "All" || interactive}
                 selectedId={selectedId}
                 onSelectElement={onSelectElement}
+                fixtureDetail={fixtureDetail}
               />
             </group>
           ),

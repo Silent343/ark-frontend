@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Search, Scan, X } from "lucide-react";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
+import type { FixtureFamilyAssignment } from "@/bounded-contexts/plan-digitization/domain/fixture-families";
+import { FixtureFamilyEditor } from "./fixture-family-editor";
 import { modelIntegrityIssues } from "@/bounded-contexts/plan-digitization/domain/model-integrity";
 import { resolveDrawingCorrespondences } from "@/bounded-contexts/plan-digitization/domain/drawing-coordination";
 import { modelDetectionExport } from "@/bounded-contexts/plan-digitization/domain/detection-sample";
@@ -19,12 +21,17 @@ export function ModelInspector({
   onSelect,
   sourcePlan = plan,
   canonicalGraph,
+  onSaveFamily,
 }: {
   plan: Blueprint;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   sourcePlan?: Blueprint;
   canonicalGraph?: CanonicalFloorPlanGraph;
+  onSaveFamily?: (
+    ids: string[],
+    assignment: FixtureFamilyAssignment | undefined,
+  ) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState("");
@@ -46,6 +53,7 @@ export function ModelInspector({
         ),
     );
   const selected = elements.find((e) => e.id === selectedId);
+  const fixture = plan.fixtures?.find((f) => f.id === selectedId);
   const evidence = selected ? plan.elementEvidence?.[selected.id] : undefined;
   const sourceId = evidence?.sourceIds[0];
   const editor = `/projects/${plan.projectId}/editor?mode=edit`;
@@ -212,6 +220,14 @@ export function ModelInspector({
             >
               Seleccionar muro anfitrión
             </button>
+          )}
+          {fixture && (
+            <FixtureFamilyEditor
+              key={`${fixture.id}:${JSON.stringify(plan.fixtureFamilies?.[fixture.id])}`}
+              fixture={fixture}
+              plan={plan}
+              onSave={onSaveFamily}
+            />
           )}
           {evidence && (
             <p className="model-source-note">
