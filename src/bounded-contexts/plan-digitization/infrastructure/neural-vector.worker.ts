@@ -1,9 +1,22 @@
-import { buildNeuralCadWalls } from "../domain/neural-plan";
+import { NeuralVectorization } from "../application/neural-vectorization";
+let job: NeuralVectorization | undefined;
 self.onmessage = (event) => {
   try {
-    const { cad, region, result, view } = event.data;
-    self.postMessage({ walls: buildNeuralCadWalls(cad, region, result, view) });
+    const { type, id, cad, region, result, index, metersPerPixel } = event.data;
+    if (type === "start")
+      job = new NeuralVectorization(cad, region, metersPerPixel);
+    else if (type === "tile" && job) job.tile(result, index);
+    else if (type === "finish" && job) {
+      self.postMessage({ id, data: job.finish() });
+      job = undefined;
+      return;
+    } else throw new Error("Trabajo neuronal no inicializado.");
+    self.postMessage({ id });
   } catch (e) {
-    self.postMessage({ error: e instanceof Error ? e.message : String(e) });
+    job = undefined;
+    self.postMessage({
+      id: event.data.id,
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 };

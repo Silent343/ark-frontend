@@ -585,8 +585,9 @@ export function compileCadBlueprint(
         assumed,
       };
     };
-    let walls = plan.walls.map((w) => ({
+    let walls = plan.walls.map((w, neuralIndex) => ({
       ...w,
+      neuralIndex,
       a: [...w.a] as Point2,
       b: [...w.b] as Point2,
     }));
@@ -779,6 +780,10 @@ export function compileCadBlueprint(
         equipment: 1.2,
         plant: 1.5,
         vehicle: 1.5,
+        bench: 0.45,
+        bathtub: 0.6,
+        fireplace: 1.2,
+        chimney: 2.8,
       };
       return [
         {
@@ -825,7 +830,9 @@ export function compileCadBlueprint(
         height,
         heightSource,
       });
-      const wallIds = new Map(walls.map((w, i) => [w, `wall-${levelId}-${i}`]));
+      const wallIds = new Map<PlanLine, string>(
+        walls.map((w, i) => [w, `wall-${levelId}-${i}`]),
+      );
       for (const wall of walls) {
         let wallHeight = terrace ? 1.2 : height;
         const notes = labels
@@ -923,6 +930,64 @@ export function compileCadBlueprint(
             "material",
           ],
         );
+      }
+      // Only explicitly reviewed neural objects reach the model. Heights are never predicted from a plan mask.
+      for (const item of plan.neural?.openings ?? []) {
+        if (
+          !item.approved ||
+          item.hostStatus !== "hosted" ||
+          !item.center ||
+          !item.widthM ||
+          !item.heightM
+        )
+          continue;
+        const wall = walls.find((w) => w.neuralIndex === item.hostWallIndex);
+        const wallId = wall && wallIds.get(wall),
+          host = wallId && hosts.get(wallId);
+        const sill = item.kind === "door" ? 0 : item.sillM;
+        if (
+          !wall ||
+          !host ||
+          sill === undefined ||
+          item.heightM + sill > host.height - 0.01
+        ) {
+          next.reconstruction!.unmatchedOpenings!++;
+          continue;
+        }
+        const center: Point2 = [item.center[0] * units, item.center[1] * units];
+        const position = project(center, wall),
+          length = distance(wall.a, wall.b);
+        if (
+          position - item.widthM / 2 < -0.02 ||
+          position + item.widthM / 2 > length + 0.02 ||
+          lineDistance(center, wall) > 0.05
+        ) {
+          next.reconstruction!.unmatchedOpenings!++;
+          continue;
+        }
+        const [x, y] = toPlan(center),
+          widthM = item.widthM;
+        const duplicate = [...next.doors, ...next.windows].some(
+          (o) =>
+            o.levelId === levelId &&
+            o.wallId === wallId &&
+            Math.hypot(o.x - x, o.y - y) < (o.width + widthM * PX) / 2,
+        );
+        if (duplicate) continue; // Measured CAD joinery takes precedence over a duplicate mask proposal.
+        const u = direction(wall),
+          id = `neural-${item.kind}-${levelId}-${item.id}`;
+        (item.kind === "door" ? next.doors : next.windows).push({
+          id,
+          levelId,
+          wallId: host.id,
+          x,
+          y,
+          width: item.widthM * PX,
+          height: item.heightM,
+          sillHeight: sill,
+          rotation: (-Math.atan2(u[1], u[0]) * 180) / Math.PI,
+        });
+        record(id, [], "neural-mask", ["type", "material"]);
       }
       for (const [i, surface] of floorSurfaces.surfaces.entries()) {
         const stairHoles = flights
@@ -1076,6 +1141,72 @@ export function compileCadBlueprint(
           "type",
           "material",
         ]);
+      }
+      for (const item of plan.neural?.fixtures ?? []) {
+        if (
+          !item.approved ||
+          !item.heightM ||
+          ![
+            "cabinet",
+            "equipment",
+            "toilet",
+            "sink",
+            "bench",
+            "fireplace",
+            "bathtub",
+            "chimney",
+          ].includes(item.kind)
+        )
+          continue;
+        const points = item.polygon.map(
+          ([x, y]) => [x * units, y * units] as Point2,
+        );
+        const edges = points.map((a, i) => ({
+          a,
+          b: points[(i + 1) % points.length],
+          thickness: 0,
+          source: item.id,
+        }));
+        const edge = edges.sort(
+          (a, b) => distance(b.a, b.b) - distance(a.a, a.b),
+        )[0];
+        const angle = Math.atan2(edge.b[1] - edge.a[1], edge.b[0] - edge.a[0]),
+          box = orientedBox(points, angle);
+        if (
+          Math.min(box.width, box.depth) < 0.1 ||
+          Math.max(box.width, box.depth) > 8
+        )
+          continue;
+        const [x, y] = toPlan(box.center),
+          kind = item.kind as FixtureKind;
+        if (
+          next.fixtures!.some(
+            (f) =>
+              f.levelId === levelId &&
+              f.kind === kind &&
+              Math.hypot(f.x - x, f.y - y) <
+                Math.min(f.width, f.depth, box.width * PX, box.depth * PX) *
+                  0.5,
+          )
+        )
+          continue;
+        const id = `neural-fixture-${levelId}-${item.id}`;
+        next.fixtures!.push({
+          id,
+          levelId,
+          x,
+          y,
+          width: box.width * PX,
+          depth: box.depth * PX,
+          height: item.heightM,
+          rotation: (-angle * 180) / Math.PI,
+          kind,
+          name: kind,
+          evidence: "neural-mask",
+          sourceIds: [],
+        });
+        next.reconstruction!.fixtureCount!++;
+        record(id, [], "neural-mask", ["type", "material"]);
       }
       next.floorDetails!.push({ levelId, segments: details });
     }

@@ -11,7 +11,11 @@ export type FixtureKind =
   | "cabinet"
   | "equipment"
   | "plant"
-  | "vehicle";
+  | "vehicle"
+  | "bench"
+  | "bathtub"
+  | "fireplace"
+  | "chimney";
 export function fixtureKind(name: string): FixtureKind | undefined {
   const s = name
     .normalize("NFD")

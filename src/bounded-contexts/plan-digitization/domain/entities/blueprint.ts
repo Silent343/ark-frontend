@@ -208,7 +208,7 @@ export interface Blueprint {
     name: string;
     kind?: import("../cad-evidence").FixtureKind;
     rotation?: number;
-    evidence?: "block" | "repeated-symbol";
+    evidence?: "block" | "repeated-symbol" | "neural-mask";
     sourceIds?: string[];
   }>;
   projectId: string;

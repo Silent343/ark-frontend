@@ -623,6 +623,26 @@
   border-radius: 8px;
   border: 1px solid #d9ddd4;
 }
+.neural-object-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 10px;
+  max-height: 440px;
+  overflow: auto;
+}
+.neural-object-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d9ddd4;
+  border-radius: 8px;
+  background: #fffefa;
+}
+.neural-object-row small {
+  display: block;
+}
 
 .model-preparation {
   max-width: 1240px;

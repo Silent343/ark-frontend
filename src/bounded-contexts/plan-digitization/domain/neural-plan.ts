@@ -1,6 +1,14 @@
 import type { CadPlan, CadRegion } from "./entities/cad-plan";
 import type { PlanLine, Point2 } from "./cad-topology";
 import {
+  validNeuralModel,
+  validNeuralTiling,
+  validNeuralInstances,
+  type NeuralTiling,
+  type NeuralInstance,
+  type NeuralOpeningInstance,
+} from "./neural-contract";
+import {
   reconstructWalls,
   lineDistance,
   direction,
@@ -29,6 +37,9 @@ export interface NeuralPlanResult {
   };
 }
 export interface CadNeuralAnalysis {
+  tiling?: NeuralTiling;
+  openings?: NeuralOpeningInstance[];
+  fixtures?: NeuralInstance[];
   regionId: string;
   sourceSignature: string;
   applied: boolean;
@@ -286,7 +297,8 @@ export function validCadNeural(cad: CadPlan) {
       /^v1-[a-f0-9]{16}$/.test(a.sourceSignature) &&
       typeof a.applied === "boolean" &&
       a.model &&
-      ["yytsi-resnet34-unet", "openbim-m2-unet"].includes(a.model.id) &&
+      validNeuralModel(a.model) &&
+      validNeuralTiling(a.tiling) &&
       typeof a.model.revision === "string" &&
       /^(?:[a-f0-9]{40}|v1\.0\.0)$/.test(a.model.revision) &&
       typeof a.model.checkpointSha256 === "string" &&
@@ -295,18 +307,37 @@ export function validCadNeural(cad: CadPlan) {
       /^[a-f0-9]{64}$/.test(a.model.artifactSha256) &&
       a.model.usage === "experimental-research" &&
       Array.isArray(a.model.classes) &&
-      a.model.classes.join(",") === "background,wall,door,window" &&
       typeof a.overlay === "string" &&
       a.overlay.length < 1_500_000 &&
       /^data:image\/png;base64,/.test(a.overlay) &&
       Number.isFinite(a.elapsedMs) &&
       a.elapsedMs >= 0 &&
-      a.elapsedMs < 180000 &&
+      a.elapsedMs <
+        (a.tiling ? 90_000 * a.tiling.tileCount + 10_000 : 180_000) &&
       Array.isArray(a.counts) &&
-      a.counts.length === 4 &&
-      a.counts.every((n) => Number.isInteger(n) && n >= 0 && n <= 512 * 512) &&
+      a.counts.length === a.model.classes.length &&
+      a.counts.every(
+        (n) =>
+          Number.isInteger(n) &&
+          n >= 0 &&
+          n <= 512 * 512 * (a.tiling?.tileCount ?? 1),
+      ) &&
       Array.isArray(a.walls) &&
-      a.walls.length <= 1000 &&
+      a.walls.length <= 10000 &&
+      validNeuralInstances(
+        a.openings,
+        a.model.classes,
+        a.walls.length,
+        true,
+        a.tiling?.tileCount ?? 1,
+      ) &&
+      validNeuralInstances(
+        a.fixtures,
+        a.model.classes,
+        a.walls.length,
+        false,
+        a.tiling?.tileCount ?? 1,
+      ) &&
       a.walls.every(
         (w) =>
           w &&
@@ -334,6 +365,7 @@ export function buildNeuralCadWalls(
   region: CadRegion,
   result: NeuralPlanResult,
   view: { x: number; y: number; scale: number; width: number; height: number },
+  candidateWalls?: PlanLine[],
 ): CadNeuralAnalysis["walls"] {
   const mask = Uint8Array.from(atob(result.mask), (c) => c.charCodeAt(0)),
     scores = Uint8Array.from(atob(result.scores), (c) => c.charCodeAt(0));
@@ -358,7 +390,7 @@ export function buildNeuralCadWalls(
   }));
   const layers = new Map(cad.layers.map((l) => [l.name, l.role]));
   const raw: PlanLine[] = [];
-  for (const e of cad.entities) {
+  for (const e of candidateWalls ? [] : cad.entities) {
     if (
       e.kind !== "path" ||
       (e.role ?? layers.get(e.layer)) !== "wall" ||
@@ -412,13 +444,15 @@ export function buildNeuralCadWalls(
           if (px < 0 || py < 0 || px >= result.width || py >= result.height)
             continue;
           const i = py * result.width + px;
-          if (mask[i] > 0 && scores[i] >= 140) present = true;
+          if (mask[i] >= 1 && mask[i] <= 3 && scores[i] >= 140) present = true;
         }
       if (present) accepted++;
     }
     return accepted / (steps + 1);
   };
-  const kept = reconstructWalls(raw).filter((w) => support(w) >= 0.4);
+  const kept = (candidateWalls ?? reconstructWalls(raw)).filter(
+    (w) => support(w) >= 0.4,
+  );
   const resultWalls: CadNeuralAnalysis["walls"] = kept.map((w) => ({
     a: [w.a[0] / units, w.a[1] / units],
     b: [w.b[0] / units, w.b[1] / units],

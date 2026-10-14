@@ -1311,7 +1311,14 @@ export function CadEditor({
             <NeuralCadPanel
               plan={plan}
               projectId={blueprint.projectId}
-              disabled={!editMode || dirty || save.status !== "saved"}
+              disabled={!editMode || save.status === "conflict"}
+              analysisDisabled={dirty || save.status !== "saved"}
+              onFocus={(bounds, regionId) => {
+                setScope(regionId);
+                setSelectedId(null);
+                setFocusBounds(bounds);
+                setFitKey((k) => k + 1);
+              }}
               onBusy={setBusy}
               onUpdate={(next) => {
                 if (current.current !== plan)
