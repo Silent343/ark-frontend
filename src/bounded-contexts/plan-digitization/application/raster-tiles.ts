@@ -71,11 +71,13 @@ export function fuseRasterWalls(
         cx = candidate.end[0] - candidate.start[0],
         cy = candidate.end[1] - candidate.start[1],
         cl = Math.hypot(cx, cy);
+      const thicknessDiff = Math.abs(wall.thickness - candidate.thickness);
+      const maxAllowedDiff = Math.max(2.5, Math.min(wall.thickness, candidate.thickness) * 0.4);
       if (
         !length ||
         !cl ||
-        Math.abs((dx * cx + dy * cy) / (length * cl)) < 0.99995 ||
-        Math.abs(wall.thickness - candidate.thickness) > 1
+        Math.abs((dx * cx + dy * cy) / (length * cl)) < 0.999 ||
+        thicknessDiff > maxAllowedDiff
       )
         continue;
       const lateral = (p: [number, number]) =>

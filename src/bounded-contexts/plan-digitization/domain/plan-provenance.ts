@@ -71,6 +71,7 @@ export function withoutSheetGeometry(
       (window) => !belongs(window) && !removedWalls.has(window.wallId),
     ),
     columns: plan.columns.filter((column) => !belongs(column)),
+    fixtures: plan.fixtures?.filter((fixture) => !belongs(fixture)),
     stairs: plan.stairs?.filter((stair) => !belongs(stair)),
     roofs: plan.roofs?.filter((roof) => !belongs(roof)),
     services: plan.services?.filter((service) => !belongs(service)),

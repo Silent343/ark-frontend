@@ -64,7 +64,6 @@ interface BuildingSceneProps {
 }
 
 function LotTerrain({ selection }: { selection: ConstructionSiteSelection }) {
-  // Site dimensions are metric; changing the camera is preferable to silently shrinking a lot.
   const width = selection.lotWidthM;
   const depth = selection.lotDepthM;
   const footprint = Math.min(
@@ -89,6 +88,11 @@ function LotTerrain({ selection }: { selection: ConstructionSiteSelection }) {
       </mesh>
     </group>
   );
+}
+
+function SpaceSurfaces(props: Parameters<typeof FloorSurfaces>[0]) {
+  const slabs=useMemo(()=>props.plan.rooms.filter(r=>r.polygon).map(r=>({id:r.id,levelId:r.levelId ?? props.plan.levels[0]?.id ?? "ground",name:r.name,polygon:r.polygon!,holes:r.holes ?? [],thickness:.016})),[props.plan.rooms,props.plan.levels]);
+  return <FloorSurfaces {...props} plan={{...props.plan,slabs}} spaceFinishes />;
 }
 
 const materialMap: Record<MaterialPreset, MeshStandardMaterialParameters> = {
@@ -330,50 +334,66 @@ function Building({
           >
             {modelViewMode === "Architecture" ? (
               <>
-                {!!plan.slabs?.length && (
-                  <FloorSurfaces
-                    plan={plan}
-                    scene={scene}
-                    selectedId={selectedElementId}
-                    onSelectElement={onSelectElement}
-                  />
-                )}
-                {!plan.slabs?.length &&
-                  plan.rooms.map((room, roomIndex) => {
-                    const roomName = room.name.toLowerCase();
-                    const color = roomName.includes("garden")
-                      ? "#789164"
-                      : roomName.includes("garage")
-                        ? "#b48e72"
-                        : roomName.includes("bath")
-                          ? "#d8ddd8"
-                          : roomIndex % 2 === 0
-                            ? "#d8d5cb"
-                            : "#cecfc7";
-                    const inset = blueprint.review ? 0 : 18;
-                    return (
-                      <mesh
-                        key={`${floor}-${room.id}-finish`}
-                        receiveShadow
-                        position={[
-                          (room.x + room.width / 2 - scene.centerX) /
-                            scene.scale,
-                          0.012,
-                          (room.y + room.height / 2 - scene.centerY) /
-                            scene.scale,
+                <FloorSurfaces
+                  plan={plan}
+                  scene={scene}
+                  selectedId={selectedElementId}
+                  onSelectElement={onSelectElement}
+                />
+                <SpaceSurfaces
+                  plan={plan}
+                  scene={scene}
+                  selectedId={selectedElementId}
+                  onSelectElement={onSelectElement}
+                />
+                {plan.rooms.filter(room=>!room.polygon).map((room, roomIndex) => {
+                  const roomName = room.name.toLowerCase();
+                  const color = roomName.includes("garden")
+                    ? "#789164"
+                    : roomName.includes("garage")
+                      ? "#b48e72"
+                      : roomName.includes("bath") || roomName.includes("baño")
+                        ? "#d8ddd8"
+                        : roomIndex % 2 === 0
+                          ? "#d8d5cb"
+                          : "#cecfc7";
+                  const inset = blueprint.review ? 0 : 18;
+                  return (
+                    <mesh
+                      key={`${floor}-${room.id}-finish`}
+                      receiveShadow
+                      onClick={
+                        onSelectElement
+                          ? (event) => {
+                              event.stopPropagation();
+                              onSelectElement(room.id);
+                            }
+                          : undefined
+                      }
+                      position={[
+                        (room.x + room.width / 2 - scene.centerX) /
+                          scene.scale,
+                        0.008,
+                        (room.y + room.height / 2 - scene.centerY) /
+                          scene.scale,
+                      ]}
+                    >
+                      <boxGeometry
+                        args={[
+                          Math.max(0.05, (room.width - inset) / scene.scale),
+                          0.016,
+                          Math.max(0.05, (room.height - inset) / scene.scale),
                         ]}
-                      >
-                        <boxGeometry
-                          args={[
-                            Math.max(0.05, (room.width - inset) / scene.scale),
-                            0.025,
-                            Math.max(0.05, (room.height - inset) / scene.scale),
-                          ]}
-                        />
-                        <meshStandardMaterial color={color} roughness={0.88} />
-                      </mesh>
-                    );
-                  })}
+                      />
+                      <meshStandardMaterial
+                        color={
+                          room.id === selectedElementId ? "#44b8ff" : color
+                        }
+                        roughness={0.86}
+                      />
+                    </mesh>
+                  );
+                })}
                 {levelScene.wallSegments.map((wall) => (
                   <mesh
                     key={`${floor}-${wall.id}`}
@@ -406,7 +426,6 @@ function Building({
                     />
                   </mesh>
                 ))}
-                {/* CAD furniture blocks stay linked to their source plan and active level. */}
                 <Furnishings
                   plan={plan}
                   scene={scene}
@@ -520,7 +539,6 @@ function Building({
                   const fromZ = (from.y - scene.centerY) / scene.scale;
                   const toX = (to.x - scene.centerX) / scene.scale;
                   const toZ = (to.y - scene.centerY) / scene.scale;
-                  // Straight schematic runs expose connectivity; no pipe routing or clash clearance is inferred.
                   const curve = new CatmullRomCurve3(
                     [
                       new Vector3(fromX, startY, fromZ),
@@ -761,7 +779,6 @@ function SpiralStair({
   );
 }
 
-/** A schematic straight flight uses its saved width, run and orientation in both views. */
 function StraightStair({
   x,
   z,
@@ -988,7 +1005,9 @@ export function BuildingScene(props: BuildingSceneProps) {
   const hasGeometry =
     props.blueprint.walls.length +
       props.blueprint.rooms.length +
-      props.blueprint.columns.length >
+      props.blueprint.columns.length +
+      (props.blueprint.slabs?.length ?? 0) +
+      (props.blueprint.fixtures?.length ?? 0) >
       0 ||
     (props.blueprint.roofs?.length ?? 0) +
       (props.blueprint.services?.length ?? 0) >
@@ -1179,7 +1198,6 @@ export function BuildingScene(props: BuildingSceneProps) {
   );
 }
 
-/** Camera motion invalidates demand frames; lowering DPR during a gesture keeps orbit responsive. */
 function SmoothOrbitControls({
   extent,
   targetY,
@@ -1209,7 +1227,6 @@ function SmoothOrbitControls({
   );
 }
 
-/** Sun shadows depend on geometry and lighting, not on the orbit camera. Reuse them while inspecting. */
 function ShadowCache({
   animate,
   revision,
@@ -1219,7 +1236,6 @@ function ShadowCache({
 }) {
   const { gl, invalidate } = useThree();
   useEffect(() => {
-    // Three's imperative renderer owns this cache; React state is not being mutated.
     /* eslint-disable react-hooks/immutability */
     gl.shadowMap.autoUpdate = animate;
     gl.shadowMap.needsUpdate = true;
@@ -1229,7 +1245,6 @@ function ShadowCache({
   return null;
 }
 
-/** Exposure is a renderer property, not a mutation of materials or source geometry. */
 function Exposure({ value }: { value: number }) {
   const { gl, invalidate } = useThree();
   useEffect(() => {

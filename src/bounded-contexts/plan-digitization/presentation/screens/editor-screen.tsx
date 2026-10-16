@@ -1,4 +1,5 @@
 "use client";
+import { roomWithBounds } from "../../domain/room-geometry";
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -759,7 +760,7 @@ function ProjectEditor({ projectId }: { projectId: string }) {
         ...current,
         rooms: current.rooms.map((item) =>
           item.id === id
-            ? { ...item, x: item.x + deltaX, y: item.y + deltaY }
+            ? roomWithBounds(item, {...item, x: item.x + deltaX, y: item.y + deltaY})
             : item,
         ),
         walls: current.walls.map((item) =>
@@ -803,8 +804,7 @@ function ProjectEditor({ projectId }: { projectId: string }) {
       const ratio =
         (bounds.width * bounds.height) / (item.width * item.height || 1);
       return {
-        ...item,
-        ...bounds,
+        ...roomWithBounds(item,bounds),
         area: Math.max(0.1, Math.round(item.area * ratio * 10) / 10),
       };
     });
@@ -1324,9 +1324,7 @@ function ProjectEditor({ projectId }: { projectId: string }) {
       rooms: blueprint.rooms.map((item) =>
         item.id === selectedId
           ? {
-              ...item,
-              ...(key === "width" ? { width: Math.max(60, value) } : {}),
-              ...(key === "height" ? { height: Math.max(60, value) } : {}),
+              ...roomWithBounds(item,{...item,...(key === "width" ? { width: Math.max(60, value) } : {}),...(key === "height" ? { height: Math.max(60, value) } : {})}),
             }
           : item,
       ),
@@ -1430,6 +1428,7 @@ function ProjectEditor({ projectId }: { projectId: string }) {
         <PlanImportDialog
           blueprint={blueprint}
           initialLevelId={levelId}
+          initialSheetId={activeSheetId || undefined}
           documents={managementData?.documents ?? []}
           onClose={() => setImportOpen(false)}
           onSave={async (next) => {

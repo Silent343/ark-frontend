@@ -96,7 +96,7 @@ export function useCanonicalModel(
       plan: {
         ...source,
         sourceImage: source.sourceImage ? "present" : undefined,
-        sheets: source.sheets?.map((s) => ({ ...s, image: "" })),
+        sheets: source.sheets?.map((s) => ({ ...s, image: "", neural: undefined })),
         floorDetails: undefined,
         cad: source.cad
           ? { ...source.cad, entities: [], layers: [], neural: undefined }

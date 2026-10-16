@@ -1,5 +1,4 @@
-import type { Blueprint } from "@/bounded-contexts/plan-digitization";
-import type { Opening } from "@/bounded-contexts/plan-digitization";
+import type { Blueprint, Opening, Wall } from "@/bounded-contexts/plan-digitization";
 import { metersPerUnit } from "@/bounded-contexts/plan-digitization/domain/plan-calibration";
 import type {
   SceneModel,
@@ -15,6 +14,73 @@ interface ProjectedOpening {
   end: number;
 }
 
+/** Calcula los ajustes longitudinales en los extremos de cada muro para sellar esquinas L y encuentros T sin solapamiento. */
+function computeCornerExtensions(walls: Wall[]): Map<string, { startPad: number; endPad: number }> {
+  const adjustments = new Map<string, { startPad: number; endPad: number }>();
+  for (const w of walls) {
+    adjustments.set(w.id, { startPad: 0, endPad: 0 });
+  }
+
+  for (let i = 0; i < walls.length; i++) {
+    const a = walls[i];
+    const adx = a.end[0] - a.start[0],
+      ady = a.end[1] - a.start[1],
+      alen = Math.hypot(adx, ady);
+    if (alen < 1e-3) continue;
+    const aux = adx / alen,
+      auy = ady / alen;
+    const adjA = adjustments.get(a.id)!;
+
+    for (let j = 0; j < walls.length; j++) {
+      if (i === j) continue;
+      const b = walls[j];
+      if ((a.levelId ?? "") !== (b.levelId ?? "")) continue;
+      const bdx = b.end[0] - b.start[0],
+        bdy = b.end[1] - b.start[1],
+        blen = Math.hypot(bdx, bdy);
+      if (blen < 1e-3) continue;
+      const bux = bdx / blen,
+        buy = bdy / blen;
+
+      const cosAngle = Math.abs(aux * bux + auy * buy);
+      const sinAngle = Math.sqrt(Math.max(0, 1 - cosAngle * cosAngle));
+      if (sinAngle < 0.35) continue; // Solo uniones con ángulo significativo (> ~20°)
+
+      const maxTol = Math.max(a.thickness, b.thickness) * 1.15;
+      const halfB = (b.thickness / 2) * sinAngle;
+
+      // Comprobamos extremo inicial (start) y final (end) del muro A contra el muro B
+      for (const endKind of ["start", "end"] as const) {
+        const pt = endKind === "start" ? a.start : a.end;
+        const dStart = Math.hypot(pt[0] - b.start[0], pt[1] - b.start[1]);
+        const dEnd = Math.hypot(pt[0] - b.end[0], pt[1] - b.end[1]);
+        const isCorner = Math.min(dStart, dEnd) <= maxTol;
+
+        if (isCorner) {
+          // Esquina L: el muro de menor ID tapa la esquina (+halfB) y el otro hace tope limpio (-halfB)
+          const pad = a.id < b.id ? halfB : -halfB;
+          if (endKind === "start" && Math.abs(pad) > Math.abs(adjA.startPad)) {
+            adjA.startPad = pad;
+          } else if (endKind === "end" && Math.abs(pad) > Math.abs(adjA.endPad)) {
+            adjA.endPad = pad;
+          }
+        } else {
+          // Encuentro en T: el extremo de A toca el cuerpo intermedio de B
+          const proj = (pt[0] - b.start[0]) * bux + (pt[1] - b.start[1]) * buy;
+          const perp = Math.abs((pt[0] - b.start[0]) * buy - (pt[1] - b.start[1]) * bux);
+          if (proj > maxTol * 0.5 && proj < blen - maxTol * 0.5 && perp <= maxTol) {
+            // Retraemos el extremo de A para que apoye sobre la cara de B sin atravesarlo
+            const pad = -halfB;
+            if (endKind === "start" && adjA.startPad === 0) adjA.startPad = pad;
+            if (endKind === "end" && adjA.endPad === 0) adjA.endPad = pad;
+          }
+        }
+      }
+    }
+  }
+  return adjustments;
+}
+
 /** Anti-corruption translator from semantic-plan coordinates to scene space. */
 export class BuildSceneModel {
   execute(
@@ -27,6 +93,7 @@ export class BuildSceneModel {
         [room.x, room.y],
         [room.x + room.width, room.y + room.height],
       ]),
+      ...(blueprint.slabs ?? []).flatMap((slab) => slab.polygon),
       ...blueprint.columns.flatMap((column) => [
         [column.x - column.size / 2, column.y - column.size / 2],
         [column.x + column.size / 2, column.y + column.size / 2],
@@ -72,6 +139,8 @@ export class BuildSceneModel {
       })),
     ];
 
+    const cornerPads = computeCornerExtensions(blueprint.walls);
+
     blueprint.walls.forEach((wall) => {
       const dx = wall.end[0] - wall.start[0];
       const dy = wall.end[1] - wall.start[1];
@@ -96,6 +165,20 @@ export class BuildSceneModel {
         })
         .sort((a, b) => a.start - b.start);
 
+      const pad = cornerPads.get(wall.id) ?? { startPad: 0, endPad: 0 };
+      const firstOpeningStart = onWall[0]?.start ?? pixelLength;
+      const lastOpeningEnd = onWall.at(-1)?.end ?? 0;
+
+      // Solo aplicamos retracción en esquina si queda margen suficiente antes del primer/último vano
+      const startOffset =
+        pad.startPad < 0 && firstOpeningStart + pad.startPad < 2
+          ? 0
+          : -pad.startPad;
+      const endLimit =
+        pad.endPad < 0 && pixelLength + pad.endPad - lastOpeningEnd < 2
+          ? pixelLength
+          : pixelLength + pad.endPad;
+
       const addSegment = (
         id: string,
         start: number,
@@ -118,11 +201,10 @@ export class BuildSceneModel {
         });
       };
 
-      let cursor = 0;
+      let cursor = startOffset;
       onWall.forEach(({ opening, type, start, end }, index) => {
-        // Overlapping or out-of-wall proposals remain review issues; never generate inverted solids.
         start = Math.max(cursor, start);
-        end = Math.min(pixelLength, end);
+        end = Math.min(endLimit, end);
         if (end <= start) return;
         addSegment(`${wall.id}-solid-${index}`, cursor, start, 0, wall.height);
         const sillHeight = Math.max(
@@ -178,7 +260,7 @@ export class BuildSceneModel {
         });
         cursor = end;
       });
-      addSegment(`${wall.id}-solid-end`, cursor, pixelLength, 0, wall.height);
+      addSegment(`${wall.id}-solid-end`, cursor, endLimit, 0, wall.height);
     });
 
     return {

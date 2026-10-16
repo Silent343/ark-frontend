@@ -2,6 +2,7 @@
 
 import { useRef, type MouseEvent, type PointerEvent } from "react";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization/domain/entities/blueprint";
+import { roomPath } from "../../domain/room-geometry";
 
 export type EditorTool = "select" | "pan" | "room" | "wall" | "door" | "window" | "column" | "roof" | "service" | "delete";
 export type ResizeHandle = "n"|"ne"|"e"|"se"|"s"|"sw"|"w"|"nw"|"start"|"end";
@@ -92,7 +93,7 @@ export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overla
       {/* A source overlay must come from a real imported file, never offset copies of geometry. */}
 
       <g>
-        {blueprint.rooms.map((room)=><g key={room.id} onClick={(event)=>select(event,room.id)} className="cursor-pointer"><rect x={room.x+9} y={room.y+9} width={room.width-18} height={room.height-18} fill={selectedId === room.id ? "#fff0e8" : "#f3f4ee"} fillOpacity={blueprint.sourceImage ? .16 : 1} stroke={selectedId === room.id ? "#ff6a2b" : "transparent"} strokeWidth="3"/><text x={room.x+room.width/2} y={room.y+room.height/2-6} textAnchor="middle" fontSize="17" fontWeight="700" fill="#59645e" stroke={blueprint.sourceImage ? "#ffffff" : "none"} strokeWidth={blueprint.sourceImage ? 4 : 0} paintOrder="stroke" letterSpacing="1.4">{room.name.toUpperCase()}</text><text x={room.x+room.width/2} y={room.y+room.height/2+20} textAnchor="middle" fontSize="12" fill="#56635d" stroke={blueprint.sourceImage ? "#ffffff" : "none"} strokeWidth={blueprint.sourceImage ? 3 : 0} paintOrder="stroke">{room.area} m²</text></g>)}
+        {blueprint.rooms.map((room)=><g key={room.id} onClick={(event)=>select(event,room.id)} className="cursor-pointer"><path d={roomPath(room)} fillRule="evenodd" fill={selectedId === room.id ? "#fff0e8" : "#d9e8dd"} fillOpacity={blueprint.sourceImage ? .3 : 1} stroke={selectedId === room.id ? "#ff6a2b" : "transparent"} strokeWidth="3"/><text x={room.x+room.width/2} y={room.y+room.height/2-6} textAnchor="middle" fontSize="17" fontWeight="700" fill="#59645e" stroke={blueprint.sourceImage ? "#ffffff" : "none"} strokeWidth={blueprint.sourceImage ? 4 : 0} paintOrder="stroke" letterSpacing="1.4">{room.name.toUpperCase()}</text><text x={room.x+room.width/2} y={room.y+room.height/2+20} textAnchor="middle" fontSize="12" fill="#56635d" stroke={blueprint.sourceImage ? "#ffffff" : "none"} strokeWidth={blueprint.sourceImage ? 3 : 0} paintOrder="stroke">{room.area.toFixed(1)} m²</text></g>)}
       </g>
       <g aria-label="Zonas de cubierta">
         {blueprint.roofs?.map((roof)=><g key={roof.id} onClick={(event)=>select(event,roof.id)} className="cursor-pointer">
@@ -127,7 +128,7 @@ export function BlueprintCanvas({ blueprint, tool = "select", selectedId, overla
       </g>
 
       <g fill="transparent" stroke="transparent" className={tool === "select" ? "cursor-move" : "cursor-pointer"}>
-        {blueprint.rooms.map((room)=><rect key={`hit-${room.id}`} x={room.x+12} y={room.y+12} width={Math.max(1,room.width-24)} height={Math.max(1,room.height-24)} onPointerDown={(event)=>startDrag(event,room.id)}/>) }
+        {blueprint.rooms.map((room)=><path key={`hit-${room.id}`} d={roomPath(room)} fillRule="evenodd" onPointerDown={(event)=>startDrag(event,room.id)}/>) }
         {blueprint.walls.map((wall)=><line key={`hit-${wall.id}`} x1={wall.start[0]} y1={wall.start[1]} x2={wall.end[0]} y2={wall.end[1]} strokeWidth={Math.max(28,wall.thickness+12)} onPointerDown={(event)=>startDrag(event,wall.id)}/>) }
         {[...blueprint.windows,...blueprint.doors].map((item)=><circle key={`hit-${item.id}`} cx={item.x} cy={item.y} r={Math.max(24,item.width/2)} onPointerDown={(event)=>startDrag(event,item.id)}/>) }
         {blueprint.columns.map((item)=><rect key={`hit-${item.id}`} x={item.x-Math.max(18,item.size/2)} y={item.y-Math.max(18,item.size/2)} width={Math.max(36,item.size)} height={Math.max(36,item.size)} onPointerDown={(event)=>startDrag(event,item.id)}/>) }

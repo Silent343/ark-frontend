@@ -41,6 +41,7 @@ import { ModelInspector } from "../components/model-inspector";
 import { useCanonicalModel } from "../use-canonical-model";
 import { ModelPreparationPanel } from "../components/model-preparation-panel";
 import { planDigitization } from "@/bounded-contexts/plan-digitization/public";
+import { PlanImportDialog } from "@/bounded-contexts/plan-digitization/presentation/components/plan-import-dialog";
 
 const BuildingScene = dynamic(
   () =>
@@ -112,6 +113,7 @@ export function ModelScreen({ projectId }: { projectId: string }) {
     null,
   );
   const [familyNotice, setFamilyNotice] = useState("");
+  const [recognizeImage, setRecognizeImage] = useState(false);
   const [siteSelection, setSiteSelection] =
     useState<ConstructionSiteSelection | null>(null);
   if (loading) return <ModelSkeleton />;
@@ -145,6 +147,18 @@ export function ModelScreen({ projectId }: { projectId: string }) {
 
   return (
     <div className="workspace-focus-surface model-focus-shell">
+      {recognizeImage && workspace && (
+        <PlanImportDialog
+          blueprint={workspace.blueprint}
+          documents={[]}
+          initialSheetId={workspace.blueprint.sheets?.at(-1)?.id}
+          onClose={() => setRecognizeImage(false)}
+          onSave={async (next) => {
+            await planDigitization.saveBlueprint.execute(next);
+            await reload();
+          }}
+        />
+      )}
       <PageHeader
         className="model-focus-header"
         eyebrow={`Modelo 3D · ${data.project.name}`}
@@ -152,6 +166,15 @@ export function ModelScreen({ projectId }: { projectId: string }) {
         description="Selecciona elementos, comprueba sus medidas y revisa su origen en el plano."
         actions={
           <>
+            {!data.blueprint.cad && !!data.blueprint.sheets?.length && (
+              <button
+                type="button"
+                className="pm-button"
+                onClick={() => setRecognizeImage(true)}
+              >
+                Reconocer imagen con IA
+              </button>
+            )}
             <Link
               href={`/projects/${projectId}`}
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9ddd4] bg-[#fbfbf7] px-3.5 text-xs font-semibold"
@@ -249,12 +272,54 @@ export function ModelScreen({ projectId }: { projectId: string }) {
                 ? data.blueprint.cad
                   ? "Columnas y losas detectadas · muros de referencia"
                   : "Estructura portante · vigas · columnas · nodos"
-                : `${levelCount} ${levelCount === 1 ? "nivel" : "niveles"} · ${data.blueprint.rooms.length} ambientes · ${data.blueprint.walls.length} muros${showTerrain && siteSelection ? ` · lote ${siteSelection.lotAreaM2} m²` : ""}`}
+                : data.blueprint.sheets?.some((sheet) => sheet.neural)
+                  ? `${levelCount} nivel · ${data.blueprint.walls.length} tramos de muro · ${data.blueprint.doors.length + data.blueprint.windows.length} aberturas · ${data.blueprint.fixtures?.length ?? 0} objetos`
+                  : `${levelCount} ${levelCount === 1 ? "nivel" : "niveles"} · ${data.blueprint.rooms.length} ambientes · ${data.blueprint.walls.length} muros${showTerrain && siteSelection ? ` · lote ${siteSelection.lotAreaM2} m²` : ""}`}
             </div>
           </div>
         </Panel>
 
         <aside className="model-control-rail space-y-5">
+          {data.blueprint.sheets
+            ?.filter((sheet) => sheet.neural)
+            .map((sheet) => (
+              <details className="model-inspector-panel" key={sheet.id} open>
+                <summary className="model-inspector-heading">
+                  De la imagen al 3D
+                </summary>
+                {/* Local mask previews are already encoded; no image optimizer or remote request is needed. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={sheet.neural!.overlay}
+                  alt="Máscaras reales de IA sobre el plano original"
+                  style={{
+                    width: "100%",
+                    maxHeight: 280,
+                    objectFit: "contain",
+                    background: "white",
+                    borderRadius: 8,
+                  }}
+                />
+                <p className="model-inspector-help">
+                    {sheet.neural!.spaces?.length ?? 0} espacios, {sheet.neural!.walls.length} segmentos de muro y{" "}
+                  {sheet.neural!.instances.length} regiones de símbolos
+                  detectadas. El 3D usa las aberturas asociadas a muros y los
+                  objetos con familia compatible.
+                </p>
+                  {sheet.neural!.symbols && <p className="model-inspector-help">
+                    Mobiliario especializado: {sheet.neural!.symbols!.items.length} propuestas;
+                    {" "}{sheet.neural!.symbols!.items.filter(i=>i.status==='confirmed').length} confirmadas para 3D.
+                    {!sheet.neural!.symbols!.model.classes.includes('plant')&&' Plantas no soportadas.'} Alturas y detalles aproximados.
+                  </p>}
+                <button
+                  type="button"
+                  className="pm-button"
+                  onClick={() => setRecognizeImage(true)}
+                >
+                  Comparar y volver a detectar
+                </button>
+              </details>
+            ))}
           {familyNotice && (
             <p className="model-inspector-help" role="status">
               {familyNotice}

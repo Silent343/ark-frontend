@@ -9,6 +9,7 @@
     "test:corpus": "node scripts/test-corpus-audit.mjs",
     "test:corpus:browser": "node scripts/test-corpus-review-browser.mjs",
     "test:families": "node scripts/test-fixture-families.mjs",
+    "test:raster:neural": "node scripts/test-raster-neural.mjs",
     "prepare:plans": "node scripts/prepare-plan-assets.mjs",
     "predev": "npm run prepare:plans",
     "prebuild": "npm run prepare:plans",

@@ -80,6 +80,7 @@ export function canonicalFromBlueprint(
       ...(plan.slabs ?? []),
       ...(plan.roofs ?? []),
       ...(plan.services ?? []),
+      ...(plan.fixtures ?? []),
     ].map((e) => [e.id, e.sheetId ? sheets.get(e.sheetId) : undefined]),
   );
   const acceptId = (id: string, levelId?: string) => {
@@ -101,6 +102,7 @@ export function canonicalFromBlueprint(
   const evidence = (id: string): SourceReference[] => {
     const entry = plan.elementEvidence?.[id];
     const sheet = elementSheets.get(id);
+    const symbolIds=plan.fixtures?.find(f=>f.id===id&&f.evidence==='neural-box')?.sourceIds;
     return [
       {
         documentId:
@@ -115,7 +117,7 @@ export function canonicalFromBlueprint(
           plan.cad?.sourceName ??
           plan.review?.sourceName,
         viewId: entry?.regionId ?? sheet?.id,
-        entityIds: entry?.sourceIds ?? [id],
+        entityIds: entry?.sourceIds ?? symbolIds ?? [id],
       },
     ];
   };
@@ -585,18 +587,21 @@ export function canonicalFromBlueprint(
             expectedArea,
         ) <= Math.max(0.05, expectedArea * 0.03),
     );
+    const learnedFootprint=room.polygon ? {outer:room.polygon.map(metric),holes:(room.holes ?? []).map(h=>h.map(metric))} : null;
+    const invalidFootprint=learnedFootprint && polygonProblem(learnedFootprint);
+    if(invalidFootprint) issue("invalid-space-boundary",room.id,`El espacio conserva evidencia, pero su superficie no se dibuja: ${invalidFootprint}`,"warning");
     graph.elements.push({
       ...base(room),
       kind: "space",
       name: { ...fallback(room.name), evidence: evidence(room.id) },
       boundaryFaceId: face?.id ?? null,
-      footprint: face?.polygon ?? null,
+      footprint: invalidFootprint ? null : learnedFootprint ?? face?.polygon ?? null,
     });
     if (!face)
       issue(
         "space-boundary-unresolved",
         room.id,
-        "El ambiente no tiene un contorno topológico compatible; conserva su nombre para revisión.",
+        room.polygon ? "El contorno del espacio procede de segmentación neuronal; falta comprobar su correspondencia con los muros." : "El ambiente no tiene un contorno topológico compatible; conserva su nombre para revisión.",
         "warning",
       );
   }
@@ -662,6 +667,7 @@ export function canonicalRenderBlueprint(
     wallSources = new Map(source.walls.map((w) => [w.id, w]));
   return {
     ...source,
+    rooms: source.rooms.filter(room=>!room.polygon || graph.elements.some(e=>e.id===room.id && e.kind==="space" && e.footprint!==null)),
     walls: graph.elements.flatMap((e) => {
       if (e.kind !== "wall") return [];
       const line = e.axis[0],

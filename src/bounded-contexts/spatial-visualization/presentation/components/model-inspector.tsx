@@ -5,6 +5,7 @@ import { ArrowUpRight, Search, Scan, X } from "lucide-react";
 import type { Blueprint } from "@/bounded-contexts/plan-digitization";
 import type { FixtureFamilyAssignment } from "@/bounded-contexts/plan-digitization/domain/fixture-families";
 import { FixtureFamilyEditor } from "./fixture-family-editor";
+import {symbolForFixture} from '@/bounded-contexts/plan-digitization/domain/symbol-detection';
 import { modelIntegrityIssues } from "@/bounded-contexts/plan-digitization/domain/model-integrity";
 import { resolveDrawingCorrespondences } from "@/bounded-contexts/plan-digitization/domain/drawing-coordination";
 import { modelDetectionExport } from "@/bounded-contexts/plan-digitization/domain/detection-sample";
@@ -54,6 +55,7 @@ export function ModelInspector({
     );
   const selected = elements.find((e) => e.id === selectedId);
   const fixture = plan.fixtures?.find((f) => f.id === selectedId);
+  const symbolEvidence=fixture?symbolForFixture(sourcePlan,fixture):undefined;
   const evidence = selected ? plan.elementEvidence?.[selected.id] : undefined;
   const sourceId = evidence?.sourceIds[0];
   const editor = `/projects/${plan.projectId}/editor?mode=edit`;
@@ -207,7 +209,9 @@ export function ModelInspector({
                           : evidence.method === "neural-mask"
                             ? "Propuesta CAD + IA"
                             : "Del plano / ajuste"
-                        : "Sin evidencia registrada"}
+                        : symbolEvidence
+                          ? d.property==='height' ? 'Altura aproximada de la familia' : 'Extensión detectada en el plano calibrado'
+                          : "Sin evidencia registrada"}
                   </small>
                 </dd>
               </div>
@@ -229,6 +233,11 @@ export function ModelInspector({
               onSave={onSaveFamily}
             />
           )}
+          {symbolEvidence&&<p className="model-source-note">
+            <strong>Origen de la detección</strong> {symbolEvidence.sheet.sourceName}<br/>
+            Símbolo {symbolEvidence.item.id} · puntuación de red {Math.round(symbolEvidence.item.score*100)} %.
+            Categoría revisada; dimensiones y detalles pendientes de validación arquitectónica.
+          </p>}
           {evidence && (
             <p className="model-source-note">
               <strong>Origen</strong> {evidence.sourceName}

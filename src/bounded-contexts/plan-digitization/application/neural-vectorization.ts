@@ -22,6 +22,19 @@ import {
 import type { RasterTile } from "./raster-tiles";
 import { neuralTileView, neuralTiles } from "./neural-tiles";
 
+/** Alturas arquitectónicas por defecto (en metros) para que las detecciones sean válidas en 3D sin bloqueo manual. */
+const DEFAULT_FIXTURE_HEIGHTS: Record<string, number> = {
+  cabinet: 0.9,
+  equipment: 0.85,
+  toilet: 0.78,
+  sink: 0.85,
+  bench: 0.45,
+  fireplace: 1.1,
+  bathtub: 0.6,
+  chimney: 2.4,
+  railing: 1.0,
+};
+
 /** Liang-Barsky: CAD axes are clipped to each metric tile before mask support is measured. */
 export function clipNeuralWall(
   w: PlanLine,
@@ -65,6 +78,7 @@ export class NeuralVectorization {
   private model?: NeuralPlanResult["model"];
   private counts: number[] = [];
   private elapsedMs = 0;
+
   constructor(
     private cad: CadPlan,
     private region: CadRegion,
@@ -73,13 +87,17 @@ export class NeuralVectorization {
     this.tiles = neuralTiles(cad, region, metersPerPixel);
     const layers = new Map(cad.layers.map((l) => [l.name, l.role])),
       raw: PlanLine[] = [];
+
     for (const entity of cad.entities) {
+      const role = entity.role ?? layers.get(entity.layer) ?? "reference";
+      // Permitimos tanto "wall" como "reference" para que la máscara neuronal descubra muros en capas sin clasificar
       if (
         entity.kind !== "path" ||
-        (entity.role ?? layers.get(entity.layer)) !== "wall" ||
+        !["wall", "reference"].includes(role) ||
         entity.group?.includes("dimension")
       )
         continue;
+
       const points = entity.closed
         ? [...entity.points, ...entity.points.slice(0, 2)]
         : entity.points;
@@ -99,7 +117,7 @@ export class NeuralVectorization {
           region.maxY * units,
         );
         if (clipped) raw.push(clipped);
-        if (raw.length > 4000)
+        if (raw.length > 12000)
           throw new Error(
             "Demasiados ejes CAD para esta región. Delimita una planta menor.",
           );
@@ -107,6 +125,7 @@ export class NeuralVectorization {
     }
     this.candidates = reconstructWalls(raw);
   }
+
   tile(result: NeuralPlanResult, index: number) {
     if (
       !validNeuralModel(result.model) ||
@@ -125,6 +144,7 @@ export class NeuralVectorization {
     )
       throw new Error("El modelo cambió durante el análisis.");
     this.model = result.model;
+
     const tile = this.tiles[index],
       view = neuralTileView(this.cad, this.region, tile, this.metersPerPixel),
       units = this.cad.metersPerCadUnit;
@@ -132,6 +152,7 @@ export class NeuralVectorization {
       scores = Uint8Array.from(atob(result.scores), (c) => c.charCodeAt(0));
     if (mask.length !== 512 * 512 || scores.length !== mask.length)
       throw new Error("Máscara neuronal incompleta.");
+
     // Predictions outside the actual crop cannot become objects from the neighbouring drawing.
     const counts = result.model.classes.map(() => 0);
     for (let y = 0; y < 512; y++)
@@ -145,6 +166,7 @@ export class NeuralVectorization {
           throw new Error("Categoría neuronal no válida.");
         counts[mask[i]]++;
       }
+
     const encode = (bytes: Uint8Array) => {
       let text = "";
       for (const byte of bytes) text += String.fromCharCode(byte);
@@ -163,6 +185,7 @@ export class NeuralVectorization {
       );
       return clipped ? [clipped] : [];
     });
+
     this.walls.push(
       ...buildNeuralCadWalls(this.cad, this.region, adjusted, view, candidates),
     );
@@ -186,6 +209,7 @@ export class NeuralVectorization {
     this.elapsedMs += result.elapsedMs;
     this.processed++;
   }
+
   finish() {
     if (this.processed !== this.tiles.length || !this.model)
       throw new Error("El análisis no cubrió todos los recortes.");
@@ -212,6 +236,9 @@ export class NeuralVectorization {
       throw new Error(
         "Demasiados objetos propuestos. Delimita una región menor.",
       );
+
+    const wallHeight = this.region.wallHeight ?? 2.8;
+
     return {
       walls,
       model: this.model,
@@ -219,10 +246,33 @@ export class NeuralVectorization {
       elapsedMs: this.elapsedMs,
       openings: instances
         .filter((i) => i.kind === "door" || i.kind === "window")
-        .map((i) => associateNeuralOpening(i, walls, units)),
-      fixtures: instances.filter(
-        (i) => i.kind !== "door" && i.kind !== "window",
-      ),
+        .map((i) => {
+          const associated = associateNeuralOpening(i, walls, units);
+          const defaultHeight = Math.min(
+            i.kind === "door" ? 2.1 : 1.2,
+            Math.max(0.5, wallHeight - (i.kind === "window" ? 1.0 : 0.2)),
+          );
+          const defaultSill =
+            i.kind === "window"
+              ? Math.min(0.9, Math.max(0, wallHeight - defaultHeight - 0.1))
+              : undefined;
+          const isHosted = associated.hostStatus === "hosted";
+          return {
+            ...associated,
+            heightM: associated.heightM ?? defaultHeight,
+            ...(i.kind === "window"
+              ? { sillM: associated.sillM ?? defaultSill }
+              : {}),
+            approved: isHosted,
+          };
+        }),
+      fixtures: instances
+        .filter((i) => i.kind !== "door" && i.kind !== "window")
+        .map((i) => ({
+          ...i,
+          heightM: i.heightM ?? (DEFAULT_FIXTURE_HEIGHTS[i.kind] ?? 0.8),
+          approved: i.kind !== "railing",
+        })),
       tiling: {
         tileSize: 512 as const,
         overlapRatio: 0.2 as const,

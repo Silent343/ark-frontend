@@ -17,12 +17,29 @@ export async function requestJson<T>(
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   if (response.status === 204) return undefined as T;
-  const result = await response.json();
-  if(response.status===401&&typeof window!=="undefined")window.dispatchEvent(new Event("ark:session-expired"));
+  const raw = await response.text();
+  let result: { data?: T; error?: { message?: string } } | undefined;
+  if (raw) {
+    try {
+      result = JSON.parse(raw) as { data?: T; error?: { message?: string } };
+    } catch {
+      // A proxy, deployment platform, or gateway can return HTML/text for an HTTP error.
+      // Do not turn that transport error into an unrelated JSON parsing failure in the UI.
+      if (!response.ok) {
+        throw new RestError(
+          "The server returned an invalid response (" + response.status + "). Try again or reload the project.",
+          response.status,
+        );
+      }
+      throw new RestError("The server returned invalid JSON.", response.status);
+    }
+  }
+  if (response.status === 401 && typeof window !== "undefined")
+    window.dispatchEvent(new Event("ark:session-expired"));
   if (!response.ok)
     throw new RestError(
-      result.error?.message ?? "Request failed (" + response.status + ").",
+      result?.error?.message ?? "Request failed (" + response.status + ").",
       response.status,
     );
-  return result.data as T;
+  return result?.data as T;
 }

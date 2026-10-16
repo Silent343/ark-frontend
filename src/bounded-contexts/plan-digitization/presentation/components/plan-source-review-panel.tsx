@@ -146,9 +146,13 @@ export function PlanSourceReviewPanel({
             <>
               <p>
                 {t(
-                  evidence.method === "manual-tracing"
-                    ? "editor.evidence.manual"
-                    : "editor.evidence.local",
+                  evidence.warnings.includes("reference-not-calibrated")
+                    ? "editor.evidence.unmeasured"
+                    : evidence.method === "neural-image-v1"
+                      ? "editor.evidence.neural"
+                      : evidence.method === "manual-tracing"
+                        ? "editor.evidence.manual"
+                        : "editor.evidence.local",
                 )}
               </p>
               <p>
@@ -177,9 +181,17 @@ export function PlanSourceReviewPanel({
                   <ul>
                     {evidence.warnings.map((warning) => (
                       <li key={warning}>
-                        {warning.startsWith("tiled-lines-baseline:")
-                          ? `Plano analizado en ${warning.split(":")[1]} recortes de alta resolución. Revisa encuentros y símbolos.`
-                          : t(`editor.evidence.warning.${warning}`, warning)}
+                          {warning === 'neural-symbols-review-required'
+                            ? 'Solo los símbolos confirmados se incorporaron al 3D. Las propuestas restantes siguen disponibles como evidencia.'
+                            : warning === 'neural-symbol-dimensions-assumed'
+                            ? 'Alturas y detalles de las familias son aproximados; las cajas del detector no son geometría BIM validada.'
+                            : warning.startsWith("neural-invalid-spaces:")
+                          ? `${warning.split(":")[1]} contornos de espacios no se incorporaron al 3D porque se cruzan o tienen huecos ambiguos. Revisa la evidencia original.`
+                          : warning.startsWith("neural-unhosted:")
+                          ? `${warning.split(":")[1]} aberturas detectadas sin muro asociado. Se conservan en la superposición para revisión.`
+                          : warning.startsWith("tiled-lines-baseline:")
+                            ? `Plano analizado en ${warning.split(":")[1]} recortes de alta resolución. Revisa encuentros y símbolos.`
+                            : t(`editor.evidence.warning.${warning}`, warning)}
                       </li>
                     ))}
                   </ul>

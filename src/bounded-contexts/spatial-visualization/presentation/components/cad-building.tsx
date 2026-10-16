@@ -147,18 +147,21 @@ export function FloorSurfaces({
   elevation = 0,
   selectedId,
   onSelectElement,
+  spaceFinishes = false,
 }: {
   plan: Blueprint;
   scene: Scene;
   elevation?: number;
   selectedId?: string | null;
   onSelectElement?: (id: string) => void;
+  spaceFinishes?: boolean;
 }) {
   const { geometry, ranges } = useMemo(() => {
     let vertices = 0,
       faces = 0;
     const ranges: Array<{
       id: string;
+      name: string;
       start: number;
       end: number;
       faceStart: number;
@@ -193,6 +196,7 @@ export function FloorSurfaces({
       const faceCount = (part.index?.count ?? count) / 3;
       ranges.push({
         id: slab.id,
+        name: slab.name,
         start: vertices,
         end: vertices + count,
         faceStart: faces,
@@ -219,13 +223,15 @@ export function FloorSurfaces({
     const white = new Color("#ffffff"),
       blue = new Color("#44b8ff");
     for (const range of ranges) {
-      const color = range.id === selectedId ? blue : white;
+      const name=range.name.toLowerCase();
+      const finish=spaceFinishes ? new Color(name.includes("exterior") ? "#8cac7c" : name.includes("garaje") ? "#c8b49a" : name.includes("baño") ? "#b9d2cf" : "#dbd7cb") : white;
+      const color = range.id === selectedId ? blue : finish;
       for (let i = range.start; i < range.end; i++)
         colors.setXYZ(i, color.r, color.g, color.b);
     }
     colors.needsUpdate = true;
     invalidate();
-  }, [geometry, ranges, selectedId, invalidate]);
+  }, [geometry, ranges, selectedId, invalidate, spaceFinishes]);
   return geometry ? (
     <mesh
       geometry={geometry}

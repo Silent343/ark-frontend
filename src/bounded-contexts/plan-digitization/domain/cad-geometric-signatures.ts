@@ -96,13 +96,13 @@ export function cadGeometricProposals(plan: CadPlan): GeometricRoleProposal[] {
       for (let i = 2; i < points.length; i += 2) {
         const a: Point2 = [points[i - 2] * units, points[i - 1] * units],
           b: Point2 = [points[i] * units, points[i + 1] * units];
-        if (dist(a, b) > 0.4) lines.push({ a, b, thickness: 0, source: e.id });
+        if (dist(a, b) > 0.12) lines.push({ a, b, thickness: 0, source: e.id });
       }
     }
     // Leave complex layers unresolved for regional analysis; original entities remain intact.
-    if (lines.length > 3000) continue; // Leave this layer for manual mapping or regional analysis.
+    if (lines.length > 15000) continue; // Leave this layer for manual mapping or regional analysis.
     const paired = reconstructWalls(lines).filter(
-      (w) => w.paired && dist(w.a, w.b) > 1.2,
+      (w) => w.paired && dist(w.a, w.b) > 0.25,
     );
     const connected = paired.filter((w, i) =>
       paired.some(

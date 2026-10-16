@@ -22,6 +22,9 @@ export interface ElementEvidence {
   assumed: string[];
 }
 export interface Room {
+  /** Source-supported non-rectangular space; bounds are editor handles only. */
+  polygon?: Array<[number, number]>;
+  holes?: Array<Array<[number, number]>>;
   id: string;
   levelId?: string;
   sheetId?: string;
@@ -95,6 +98,9 @@ export type PlanDiscipline =
 
 /** A source page stays identifiable even when several drawings share a level. */
 export interface PlanSheet {
+  /** Full raster used for inference, distinct from the compressed display thumbnail. */
+  analysisImage?: string;
+  neural?: import("../raster-neural").RasterNeuralProposal;
   viewType?: import("../drawing-coordination").DrawingView;
   /** Coordinates are aligned to the shared project sheet. */
   id: string;
@@ -161,7 +167,7 @@ export interface SeismicParameters {
 export interface PlanReview {
   sourceName: string;
   page: number;
-  method: "local-lines-v1" | "manual-tracing";
+  method: "local-lines-v1" | "manual-tracing" | "neural-image-v1";
   status: "draft" | "reviewed";
   reviewedIds: string[];
   warnings: string[];
@@ -200,6 +206,7 @@ export interface Blueprint {
     unregisteredRegions?: string[];
   };
   fixtures?: Array<{
+    sheetId?: string;
     id: string;
     levelId: string;
     x: number;
@@ -210,7 +217,7 @@ export interface Blueprint {
     name: string;
     kind?: import("../cad-evidence").FixtureKind;
     rotation?: number;
-    evidence?: "block" | "repeated-symbol" | "neural-mask";
+    evidence?: "block" | "repeated-symbol" | "neural-mask" | "neural-box";
     sourceIds?: string[];
   }>;
   projectId: string;

@@ -18,6 +18,8 @@ import {
 } from "./cad-topology";
 
 export interface NeuralPlanResult {
+  details?: Array<Pick<NeuralPlanResult,'mask'|'scores'|'content'> & {sourceRegion:{x:number;y:number;width:number;height:number}}>;
+  symbols?: import('./symbol-detection').SymbolProposal;
   width: number;
   height: number;
   mask: string;
@@ -35,6 +37,8 @@ export interface NeuralPlanResult {
     usage: string;
     classes: string[];
   };
+  spaces?: { classes: string[]; mask: string; scores: string };
+  sourceRegion?: {x:number;y:number;width:number;height:number};
 }
 export interface CadNeuralAnalysis {
   tiling?: NeuralTiling;
@@ -111,18 +115,24 @@ export function vectorizeNeuralWalls(
   width: number,
   height: number,
   metersPerPixel: number,
+  minimumLengthPixels?: number,
+  pixelGeometry = false,
 ): PlanLine[] {
   if (
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
     width < 3 ||
     height < 3 ||
-    width > 512 ||
-    height > 512 ||
+    width > (pixelGeometry ? 1024 : 512) ||
+    height > (pixelGeometry ? 1024 : 512) ||
     mask.length !== width * height ||
     scores.length !== mask.length ||
     !Number.isFinite(metersPerPixel) ||
-    metersPerPixel <= 0
+    metersPerPixel <= 0 ||
+    (minimumLengthPixels !== undefined &&
+      (!Number.isFinite(minimumLengthPixels) ||
+        minimumLengthPixels <= 0 ||
+        minimumLengthPixels > 512))
   )
     throw new Error("Invalid neural wall grid.");
   const size = mask.length,
@@ -241,21 +251,20 @@ export function vectorizeNeuralWalls(
     const widths = ids
       .map((i) => distance[i] * 2 * metersPerPixel)
       .sort((a, b) => a - b);
-    const thickness = Math.max(
+    const thickness = pixelGeometry ? widths[Math.floor(widths.length / 2)] : Math.max(
       0.06,
       Math.min(0.8, widths[Math.floor(widths.length / 2)]),
     );
     const points = simplify(
       ids.map((i) => [i % width, Math.floor(i / width)] as Point2),
+      pixelGeometry ? Math.max(1.25, thickness / metersPerPixel * 0.3) : 1.25,
     );
     for (let i = 1; i < points.length; i++)
       if (
         Math.hypot(
           points[i][0] - points[i - 1][0],
           points[i][1] - points[i - 1][1],
-        ) *
-          metersPerPixel >=
-        0.25
+        ) >= (minimumLengthPixels ?? 0.25 / metersPerPixel)
       ) {
         walls.push({
           a: points[i - 1],

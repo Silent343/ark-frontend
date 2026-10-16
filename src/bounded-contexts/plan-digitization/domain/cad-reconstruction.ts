@@ -13,6 +13,7 @@ import {
   isDoorArc,
   type FixtureKind,
 } from "./cad-evidence";
+import { applyCadGeometricProposals } from "./cad-geometric-signatures";
 import { convexHull, detectFloorSurfaces } from "./cad-floor-mask";
 import {
   contains,
@@ -60,6 +61,7 @@ function pointsOf(e: CadEntity, units: number): Point2[] {
     );
   return [[e.x * units, e.y * units]];
 }
+
 function linesOf(entities: CadEntity[], units: number): PlanLine[] {
   return entities.flatMap((e) => {
     if (e.kind !== "path") return [];
@@ -71,6 +73,7 @@ function linesOf(entities: CadEntity[], units: number): PlanLine[] {
       .filter((l) => distance(l.a, l.b) > 0.025);
   });
 }
+
 function inRegion(e: CadEntity, r: CadRegion, margin = 0.02) {
   const b = cadEntityBounds(e),
     x = (b.minX + b.maxX) / 2,
@@ -81,6 +84,61 @@ function inRegion(e: CadEntity, r: CadRegion, margin = 0.02) {
     y >= r.minY - margin &&
     y <= r.maxY + margin
   );
+}
+
+/** Extiende los ejes de muros en encuentros L y T separados por el semiespesor del muro. */
+function snapWallCorners(walls: PlanLine[]): PlanLine[] {
+  const cloned = walls.map((w) => ({
+    ...w,
+    a: [...w.a] as Point2,
+    b: [...w.b] as Point2,
+  }));
+  for (let i = 0; i < cloned.length; i++) {
+    const w = cloned[i];
+    if (distance(w.a, w.b) < 0.05) continue;
+    const u = direction(w);
+    const maxReach = Math.max(0.22, w.thickness * 1.25);
+
+    for (let j = 0; j < cloned.length; j++) {
+      if (i === j) continue;
+      const other = cloned[j];
+      if (distance(other.a, other.b) < 0.05) continue;
+      const v = direction(other);
+      if (Math.abs(dot(u, v)) > 0.96) continue; // Casi paralelos
+
+      // Proyección del extremo 'a' sobre el otro muro
+      const projA = plus(other.a, v, project(w.a, other));
+      const tA = project(w.a, other);
+      const lenOther = distance(other.a, other.b);
+      if (
+        tA >= -maxReach &&
+        tA <= lenOther + maxReach &&
+        distance(w.a, projA) <= maxReach &&
+        distance(w.a, projA) > 1e-4
+      ) {
+        const shift = dot(sub(projA, w.a), u);
+        if (Math.abs(shift) <= maxReach) {
+          w.a = plus(w.a, u, shift);
+        }
+      }
+
+      // Proyección del extremo 'b' sobre el otro muro
+      const projB = plus(other.a, v, project(w.b, other));
+      const tB = project(w.b, other);
+      if (
+        tB >= -maxReach &&
+        tB <= lenOther + maxReach &&
+        distance(w.b, projB) <= maxReach &&
+        distance(w.b, projB) > 1e-4
+      ) {
+        const shift = dot(sub(projB, w.b), u);
+        if (Math.abs(shift) <= maxReach) {
+          w.b = plus(w.b, u, shift);
+        }
+      }
+    }
+  }
+  return cloned;
 }
 
 /** Explicit finished-floor labels take precedence over the project's default storey height. */
@@ -221,7 +279,6 @@ function findOpening(
     return best;
   }
   // A jamb may end at a perpendicular wall or column instead of a second parallel wall.
-  // Test symbol-oriented edges, requiring physical support at BOTH ends before creating a host.
   for (const stroke of linesOf(group.entities, units).filter(
     (l) => distance(l.a, l.b) > 0.4,
   )) {
@@ -410,6 +467,11 @@ export function compileCadBlueprint(
   cad: CadPlan,
   defaultHeight = 2.8,
 ): Blueprint {
+  // Si las unidades están confirmadas, enriquecemos las entidades sin rol mediante firmas geométricas
+  if (cad.unitConfirmed) {
+    applyCadGeometricProposals(cad);
+  }
+
   const units = cad.metersPerCadUnit,
     roles = new Map(cad.layers.map((l) => [l.name, l.role]));
   const roleOf = (e: CadEntity) =>
@@ -420,17 +482,29 @@ export function compileCadBlueprint(
     .filter((r) => r.enabled && (!r.viewType || r.viewType === "plan"))
     .map((region) => {
       const entities = cad.entities.filter((e) => inRegion(e, region));
-      const raw = linesOf(
+      let raw = linesOf(
         entities.filter((e) => roleOf(e) === "wall"),
         units,
       );
+      // Respaldo geométrico: si ninguna capa fue marcada como "wall", buscamos caras paralelas en "reference"
+      if (!raw.length) {
+        const refCandidates = reconstructWalls(
+          linesOf(
+            entities.filter((e) => roleOf(e) === "reference"),
+            units,
+          ).filter((l) => distance(l.a, l.b) > 0.2),
+        ).filter((w) => w.paired && distance(w.a, w.b) > 0.35);
+        if (refCandidates.length >= 3) {
+          raw = refCandidates;
+        }
+      }
       // Structural layers can contain both compact columns and long shear walls. Paired faces distinguish them from grid axes.
       const structural = reconstructWalls(
         linesOf(
           entities.filter((e) => roleOf(e) === "column"),
           units,
         ),
-      ).filter((w) => w.paired && distance(w.a, w.b) > 1.3);
+      ).filter((w) => w.paired && distance(w.a, w.b) > 0.6);
       const neural = cad.unitConfirmed
         ? cad.neural?.find(
             (a) =>
@@ -440,22 +514,23 @@ export function compileCadBlueprint(
               a.walls.length > 0,
           )
         : undefined;
+      const mergedWalls = neural
+        ? neural.walls.map((w, i) => ({
+            a: [w.a[0] * units, w.a[1] * units] as Point2,
+            b: [w.b[0] * units, w.b[1] * units] as Point2,
+            thickness: w.thickness,
+            source: w.sourceIds?.[0] ?? `neural-${i}`,
+            sourceIds: w.sourceIds ?? [],
+            paired: false,
+          }))
+        : mergeLines([...reconstructWalls(raw), ...structural], 0.06, 0.025);
       return {
         region,
         entities,
         raw,
         structural,
         neural,
-        walls: neural
-          ? neural.walls.map((w, i) => ({
-              a: [w.a[0] * units, w.a[1] * units] as Point2,
-              b: [w.b[0] * units, w.b[1] * units] as Point2,
-              thickness: w.thickness,
-              source: w.sourceIds?.[0] ?? `neural-${i}`,
-              sourceIds: w.sourceIds ?? [],
-              paired: false,
-            }))
-          : mergeLines([...reconstructWalls(raw), ...structural], 0.06, 0.025),
+        walls: snapWallCorners(mergedWalls),
         center: [
           ((region.minX + region.maxX) * units) / 2,
           ((region.minY + region.maxY) * units) / 2,
@@ -557,7 +632,6 @@ export function compileCadBlueprint(
             reference.walls,
             sub(reference.center, plan.center),
           );
-    // A manual correction is relative to the automatic registration, in metres.
     if (region.alignment) {
       registration.offset = [
         registration.offset[0] + region.alignment.x,
@@ -591,7 +665,6 @@ export function compileCadBlueprint(
       a: [...w.a] as Point2,
       b: [...w.b] as Point2,
     }));
-    // Column layers often contain long grid axes too. Only closed, compact structural contours become columns.
     const columnContours = floorFaces(
       linesOf(
         entities.filter((e) => roleOf(e) === "column"),
@@ -621,7 +694,6 @@ export function compileCadBlueprint(
     for (const wall of walls)
       for (const column of columns) {
         const reach = Math.hypot(column.width, column.depth) / 2 + 0.12;
-        // Extend on the original axis: snapping to the column centre would rotate the wall and its openings.
         const projected = plus(
           wall.a,
           direction(wall),
@@ -642,7 +714,6 @@ export function compileCadBlueprint(
         units,
       ),
     );
-    // Mixed joinery layers contain both doors and windows. A door needs swing/block evidence.
     for (const group of openingGroups) {
       if (
         group.role === "door" &&
@@ -683,7 +754,12 @@ export function compileCadBlueprint(
       (e): e is Extract<CadEntity, { kind: "text" }> => e.kind === "text",
     );
     const floorSurfaces = detectFloorSurfaces(
-      [...plan.raw, ...plan.structural, ...proposals.map((p) => p.match.wall)],
+      [
+        ...plan.raw,
+        ...plan.structural,
+        ...walls,
+        ...proposals.map((p) => p.match.wall),
+      ],
       [
         ...columns.map((c) => c.corners),
         ...openingGroups
@@ -702,6 +778,13 @@ export function compileCadBlueprint(
         ),
       })),
     );
+    // Si los muros no lograron cerrar una superficie en la máscara por vanos abiertos, generamos la envolvente de la planta
+    if (!floorSurfaces.surfaces.length && walls.length >= 3) {
+      const hull = convexHull(walls.flatMap((w) => [w.a, w.b]));
+      if (hull.length >= 3) {
+        floorSurfaces.surfaces.push({ polygon: hull, holes: [] });
+      }
+    }
     const flights = stairFlights(
       entities.filter((e) => roleOf(e) === "stair"),
       units,
@@ -931,7 +1014,6 @@ export function compileCadBlueprint(
           ],
         );
       }
-      // Only explicitly reviewed neural objects reach the model. Heights are never predicted from a plan mask.
       for (const item of plan.neural?.openings ?? []) {
         if (
           !item.approved ||
@@ -973,7 +1055,7 @@ export function compileCadBlueprint(
             o.wallId === wallId &&
             Math.hypot(o.x - x, o.y - y) < (o.width + widthM * PX) / 2,
         );
-        if (duplicate) continue; // Measured CAD joinery takes precedence over a duplicate mask proposal.
+        if (duplicate) continue;
         const u = direction(wall),
           id = `neural-${item.kind}-${levelId}-${item.id}`;
         (item.kind === "door" ? next.doors : next.windows).push({
@@ -989,6 +1071,10 @@ export function compileCadBlueprint(
         });
         record(id, [], "neural-mask", ["type", "material"]);
       }
+      const slabSources = [
+        ...plan.raw.flatMap((l) => l.sourceIds ?? [l.source]),
+        ...walls.flatMap((l) => l.sourceIds ?? [l.source]),
+      ].filter((id) => cad.entities.some((e) => e.id === id));
       for (const [i, surface] of floorSurfaces.surfaces.entries()) {
         const stairHoles = flights
           .filter(
@@ -1011,7 +1097,7 @@ export function compileCadBlueprint(
         });
         record(
           `slab-${levelId}-${i}`,
-          plan.raw.flatMap((l) => l.sourceIds ?? [l.source]),
+          slabSources,
           "closed-contour",
           ["thickness", "material"],
         );
@@ -1212,7 +1298,6 @@ export function compileCadBlueprint(
     }
   }
   next.levels.sort((a, b) => a.elevation - b.elevation);
-  // Reference pages survive CAD rebuilding, including their source-level identity.
   for (const sheet of next.sheets ?? []) {
     if (!next.levels.some((l) => l.id === sheet.levelId)) {
       const level = base.levels.find((l) => l.id === sheet.levelId);

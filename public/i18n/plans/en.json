@@ -1,6 +1,8 @@
 {
   "import.eyebrow": "Source → geometry → review → model",
-  "import.title": "Import and calibrate plan",
+  "import.title": "Add plan",
+  "editor.evidence.unmeasured": "Plan saved · a known length is still needed",
+  "editor.evidence.warning.reference-not-calibrated": "Plan saved without measurements. Provide a known length to detect elements and create the 3D model.",
   "import.private": "Analysis and OCR run in this browser. The draft is saved to your project only after confirmation.",
   "import.close": "Close import",
   "import.source": "Source file",

@@ -1,11 +1,18 @@
 "use client";
+import { roomPath } from "../../domain/room-geometry";
+import {reclassifyRasterOpening} from '../../domain/raster-opening-review';
 import { createCadPlan } from "../../domain/cad-operations";
 import { compileCadModel } from "../../infrastructure/compile-cad-model";
-import { detectColoredSpaces } from "../../application/detect-colored-spaces";
-import { analyzeRasterPlan } from "../../infrastructure/analyze-raster-plan";
+import { RasterNeuralPanel } from "./raster-neural-panel";
+import {
+  applyRasterNeural,
+  validRasterNeural,
+  type RasterNeuralProposal,
+} from "../../domain/raster-neural";
+import { useRouter } from "next/navigation";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { RotateCw, Upload, X } from "lucide-react";
+import { Check, FileImage, Info, RotateCw, Upload, X } from "lucide-react";
 import type {
   Blueprint,
   PlanDiscipline,
@@ -18,10 +25,8 @@ import {
 import { mergeImportedReview } from "../../domain/plan-review";
 import { withoutSheetGeometry } from "../../domain/plan-provenance";
 import {
-  suggestOpeningsFromText,
   suggestRoomNames,
   suggestServicePoints,
-  suggestStairsFromText,
 } from "../../application/detect-plan-lines";
 import {
   loadPlanSource,
@@ -75,6 +80,7 @@ export function PlanImportDialog({
   onSave,
   onClose,
   referenceOnly = false,
+  initialSheetId,
 }: {
   blueprint: Blueprint;
   documents: SourceDocument[];
@@ -82,48 +88,98 @@ export function PlanImportDialog({
   onSave: (next: Blueprint) => Promise<void>;
   onClose: () => void;
   referenceOnly?: boolean;
+  initialSheetId?: string;
 }) {
   const { t, locale } = useI18n();
+  const router = useRouter();
+  const initialSheet = blueprint.sheets?.find(
+    (sheet) => sheet.id === initialSheetId,
+  );
+  const initialSheetLoaded = useRef(false);
+  const initialNeuralLoaded = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null),
     controller = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const cadRenderGeneration = useRef(0);
   const [file, setFile] = useState<File | null>(null),
     [page, setPage] = useState(1);
-  const [discipline, setDiscipline] = useState<PlanDiscipline>("architecture");
+  const [discipline, setDiscipline] = useState<PlanDiscipline>(
+    initialSheet?.discipline ?? "architecture",
+  );
   const [viewType, setViewType] = useState<
     "plan" | "section" | "elevation" | "schedule" | "detail"
   >(referenceOnly ? "section" : "plan");
   const [levelId, setLevelId] = useState(
-    initialLevelId ??
+    initialSheet?.levelId ??
+      initialLevelId ??
       blueprint.levels.find((item) => item.elevation === 0)?.id ??
       blueprint.levels[0]?.id ??
       "",
   );
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
+  const [offsetX, setOffsetX] = useState(
+    initialSheet ? initialSheet.x * metersPerUnit(blueprint) : 0,
+  );
+  const [offsetY, setOffsetY] = useState(
+    initialSheet ? initialSheet.y * metersPerUnit(blueprint) : 0,
+  );
   const [source, setSource] = useState<RasterPlan | null>(null);
   const [visibleCadLayers, setVisibleCadLayers] = useState<string[]>([]);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [rotation, setRotation] = useState(0),
     [contrast, setContrast] = useState(100),
-    [denoise, setDenoise] = useState(true);
+    [denoise, setDenoise] = useState(false);
   const [points, setPoints] = useState<PlanPoint[]>([]),
     [perspective, setPerspective] = useState(false);
   const [distance, setDistance] = useState(""),
-    [wallHeight, setWallHeight] = useState(2.8),
-    [threshold, setThreshold] = useState(145);
+    [wallHeight, setWallHeight] = useState(2.8);
+  const [wallHeightSet, setWallHeightSet] = useState(false);
   const [ocr, setOcr] = useState(false),
     [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(0),
     [error, setError] = useState("");
   const [draft, setDraft] = useState<Blueprint | null>(null),
-    [replaceSheetId, setReplaceSheetId] = useState(""),
+    [replaceSheetId, setReplaceSheetId] = useState(initialSheet?.id ?? ""),
     [confirmReplace, setConfirmReplace] = useState(false);
   const [confirmedServices, setConfirmedServices] = useState<string[]>([]);
   const [confirmedOpenings, setConfirmedOpenings] = useState<string[]>([]);
   const [confirmedStairs, setConfirmedStairs] = useState<string[]>([]);
+  const [neuralResult, setNeuralResult] = useState<{
+    canvas: HTMLCanvasElement;
+    proposal: RasterNeuralProposal;
+  } | null>(null);
+  const [showNeural, setShowNeural] = useState(true);
+  const [neuralBusy, setNeuralBusy] = useState(false);
+  const [savedScale, setSavedScale] = useState(false);
+  const [previewOnly,setPreviewOnly]=useState(false);
+  const selectedLevel = blueprint.levels.find((item) => item.id === levelId);
+  const referenceLength =
+    points.length === 2
+      ? Math.hypot(points[1][0] - points[0][0], points[1][1] - points[0][1])
+      : 0;
+  const measureReady =
+    referenceLength >= 10 &&
+    Number(distance) > 0 &&
+    Number(distance) <= 1000 &&
+    Number.isFinite(Number(distance));
+  const analysisReady =
+    measureReady &&
+    wallHeight >= 1 &&
+    wallHeight <= 20 &&
+    Number.isFinite(offsetX) &&
+    offsetX >= 0 &&
+    Number.isFinite(offsetY) &&
+    offsetY >= 0;
+  const measureHint =
+    points.length < 2
+      ? `Marca ${points.length === 0 ? "el inicio y el final" : "el final"} de un muro o una cota en el plano.`
+      : referenceLength < 10
+        ? "Los puntos están demasiado cerca. Marca un tramo más largo."
+        : !measureReady
+          ? "Escribe cuánto mide ese tramo en metros. Por ejemplo: 4,50."
+          : !analysisReady
+            ? "Revisa la altura y la posición en Ajustes avanzados antes de continuar."
+            : "Medida lista. Ya puedes buscar los elementos del plano.";
   const preparation = useMemo(() => {
     if (!source) return { canvas: null, error: "" };
     try {
@@ -149,6 +205,16 @@ export function PlanImportDialog({
     }
   }, [source, rotation, contrast, denoise]);
   const prepared = preparation.canvas;
+  const neuralProposal =
+    neuralResult?.canvas === prepared ? neuralResult.proposal : null;
+  useEffect(()=>{
+    if(initialNeuralLoaded.current||!prepared||!initialSheet?.analysisImage||!initialSheet.neural)return;
+    initialNeuralLoaded.current=true;
+    if(prepared.width!==initialSheet.neural.sourceSize.width||prepared.height!==initialSheet.neural.sourceSize.height||!validRasterNeural(initialSheet.neural))return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore the saved review once with the identical analysis raster.
+    setNeuralResult({canvas:prepared,proposal:initialSheet.neural});
+    setManual(false);
+  },[prepared,initialSheet]);
   const preview = useMemo(
     () =>
       prepared
@@ -170,6 +236,7 @@ export function PlanImportDialog({
   useEffect(() => () => source?.cad?.dispose(), [source?.cad]);
 
   const resetAnalysis = () => {
+    setSavedScale(false);
     setDraft(null);
     setPoints([]);
     setConfirmReplace(false);
@@ -206,6 +273,7 @@ export function PlanImportDialog({
       setViewType(nextView);
       setPage(nextPage);
       setSource(raster);
+      setPreviewOnly(false);
       setVisibleCadLayers(
         raster.cad?.layers
           .filter((item) => item.visible)
@@ -279,15 +347,68 @@ export function PlanImportDialog({
       setError(t("import.invalidFile"));
     }
   }
+  useEffect(() => {
+    if (!initialSheetId || initialSheetLoaded.current) return;
+    const sheet = blueprint.sheets?.find((s) => s.id === initialSheetId);
+    if (!sheet?.image) return;
+    initialSheetLoaded.current = true;
+    const analysisImage = sheet.analysisImage ?? sheet.image;
+    const mime = /^data:([^;]+);base64,/.exec(analysisImage)?.[1];
+    if (!mime?.startsWith("image/")) return;
+    const bytes = Uint8Array.from(atob(analysisImage.split(",")[1]), (c) =>
+      c.charCodeAt(0),
+    );
+    let live = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Decode the persisted image once when this workspace opens.
+    void load(
+      new File([bytes], sheet.sourceName.replace(/\.[^.]+$/, "") + ".jpg", {
+        type: mime,
+      }),
+      1,
+      sheet.discipline,
+      "plan",
+    ).then(() => {
+      if (!live) return;
+      setPreviewOnly(!sheet.analysisImage);
+      if (
+        !sheet.evidence?.warnings.includes("reference-not-calibrated") &&
+        blueprint.calibration
+      ) {
+        const image = new Image();
+        image.onload = () => {
+          if (!live) return;
+          setPoints([
+            [0, 0],
+            [image.naturalWidth, 0],
+          ]);
+          setDistance(String(sheet.width * metersPerUnit(blueprint)));
+          setSavedScale(true);
+        };
+        image.src = analysisImage;
+      }
+    });
+    return () => {
+      live = false;
+    };
+    // Initial sheet hydration runs once. Subsequent user choices stay in control.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSheetId, blueprint.sheets]);
   async function analyze() {
     if (
       !prepared ||
       !file ||
       points.length !== 2 ||
+      !analysisReady ||
       perspective ||
       viewType !== "plan"
     )
       return;
+    if (!manual && discipline === "architecture" && !neuralProposal) {
+      setError(
+        "Pulsa «Detectar elementos con IA» para obtener la propuesta antes de preparar el 3D.",
+      );
+      return;
+    }
     const run = ++generation.current;
     const operation = new AbortController();
     controller.current = operation;
@@ -310,9 +431,15 @@ export function PlanImportDialog({
         stairs: [],
         services: [],
         slabs: [],
+        fixtures: [],
+        roofs: [],
         levels: blueprint.levels.map((l) =>
           l.id === levelId
-            ? { ...l, height: wallHeight, heightSource: "manual" }
+            ? {
+                ...l,
+                height: wallHeight,
+                heightSource: wallHeightSet ? "manual" : "assumed",
+              }
             : l,
         ),
         calibration: undefined,
@@ -323,41 +450,8 @@ export function PlanImportDialog({
         points as [PlanPoint, PlanPoint],
         Number(distance),
       );
-      let tileCount = 0;
-      if (!manual && discipline === "architecture") {
-        const analysis = await analyzeRasterPlan(prepared, {
-          threshold,
-          wallHeight,
-          levelId,
-          metersPerPixel: next.calibration!.metersPerUnit,
-          signal: operation.signal,
-          onProgress: (fraction) => setProgress(fraction * 0.7),
-        });
-        next.walls = analysis.walls;
-        next.rooms = analysis.rooms;
-        next.slabs = analysis.slabs;
-        tileCount = analysis.tileCount;
-        // Color is supplementary floor evidence, sampled separately from structural detection.
-        if (!next.slabs.length) {
-          const thumbnail = planPreviewCanvas(prepared),
-            scaleX = prepared.width / thumbnail.width,
-            scaleY = prepared.height / thumbnail.height;
-          const pixels = thumbnail
-            .getContext("2d")!
-            .getImageData(0, 0, thumbnail.width, thumbnail.height);
-          next.slabs = detectColoredSpaces(
-            pixels.data,
-            thumbnail.width,
-            thumbnail.height,
-            levelId,
-          ).map((s) => ({
-            ...s,
-            polygon: s.polygon.map(([x, y]) => [x * scaleX, y * scaleY]),
-            holes: s.holes.map((h) =>
-              h.map(([x, y]) => [x * scaleX, y * scaleY]),
-            ),
-          }));
-        }
+      if (!manual && discipline === "architecture" && neuralProposal) {
+        next = applyRasterNeural(next, neuralProposal, levelId, wallHeight);
       }
       // Embedded text positions are only valid before a geometric transformation.
       let text = rotation === 0 ? (source?.text ?? []) : [];
@@ -382,32 +476,21 @@ export function PlanImportDialog({
         points as [PlanPoint, PlanPoint],
         Number(distance),
       );
-      if (!manual && discipline === "architecture") {
-        const proposals = suggestOpeningsFromText(
-          text,
-          next.walls,
-          levelId,
-          next.calibration!.metersPerUnit,
-        );
-        next.doors = proposals.doors;
-        next.windows = proposals.windows;
-        next.stairs = suggestStairsFromText(
-          text,
-          levelId,
-          next.calibration!.metersPerUnit,
-          prepared.width,
-          prepared.height,
-        );
-      }
       next.review = {
         sourceName: file.name,
         page,
-        method: manual ? "manual-tracing" : "local-lines-v1",
+        method: manual
+          ? "manual-tracing"
+          : neuralProposal
+            ? "neural-image-v1"
+            : "local-lines-v1",
         status: "draft",
         reviewedIds: [],
         text,
         warnings: [
-          `tiled-lines-baseline:${tileCount}`,
+          ...(neuralProposal
+            ? (next.review?.warnings ?? ["neural-image-proposal"])
+            : []),
           "openings-require-review",
           "text-proposals-require-confirmation",
           "heights-assumed",
@@ -417,8 +500,10 @@ export function PlanImportDialog({
       };
       setDraft(next);
       setConfirmedServices([]);
-      setConfirmedOpenings([]);
-      setConfirmedStairs([]);
+      setConfirmedOpenings(
+        neuralProposal ? [...next.doors, ...next.windows].map((o) => o.id) : [],
+      );
+      setConfirmedStairs(neuralProposal?.symbols ? (next.stairs ?? []).map(s=>s.id) : []);
     } catch (reason) {
       if (generation.current === run)
         setError(
@@ -431,7 +516,7 @@ export function PlanImportDialog({
       if (generation.current === run) setBusy(false);
     }
   }
-  async function save() {
+  async function save(openModel = false) {
     if (!draft || !file || !prepared || !preview) return;
     setBusy(true);
     setError("");
@@ -481,6 +566,7 @@ export function PlanImportDialog({
         y: originY + room.y * ratio,
         width: room.width * ratio,
         height: room.height * ratio,
+        ...(room.polygon ? {polygon:room.polygon.map(point),holes:(room.holes ?? []).map(h=>h.map(point))} : {}),
       }));
       const importedSlabs = (draft.slabs ?? []).map((slab, index) => ({
         ...slab,
@@ -489,6 +575,16 @@ export function PlanImportDialog({
         levelId,
         polygon: slab.polygon.map(point),
         holes: slab.holes.map((hole) => hole.map(point)),
+      }));
+      const importedFixtures = (draft.fixtures ?? []).map((fixture, index) => ({
+        ...fixture,
+        id: `fixture-${prefix}-${index + 1}`,
+        sheetId,
+        levelId,
+        x: originX + fixture.x * ratio,
+        y: originY + fixture.y * ratio,
+        width: fixture.width * ratio,
+        depth: fixture.depth * ratio,
       }));
       const importedServices = (draft.services ?? [])
         .filter((item) => confirmedServices.includes(item.id))
@@ -535,6 +631,8 @@ export function PlanImportDialog({
           ...(item.length ? { length: item.length * ratio } : {}),
         }));
       const sheet = {
+        ...(neuralProposal ? { neural: neuralProposal } : {}),
+        ...(!source?.cad&&!previewOnly?{analysisImage:prepared.toDataURL('image/jpeg',.95)}:{}),
         id: sheetId,
         name: `${file.name} · página ${page}`,
         discipline,
@@ -557,7 +655,11 @@ export function PlanImportDialog({
         ...basePlan,
         levels: basePlan.levels.map((l) =>
           l.id === levelId
-            ? { ...l, height: wallHeight, heightSource: "manual" }
+            ? {
+                ...l,
+                height: wallHeight,
+                heightSource: wallHeightSet ? "manual" : "assumed",
+              }
             : l,
         ),
         width: Math.max(blueprint.width, sheet.x + sheet.width),
@@ -583,6 +685,7 @@ export function PlanImportDialog({
         walls: [...basePlan.walls, ...importedWalls],
         rooms: [...basePlan.rooms, ...importedRooms],
         slabs: [...(basePlan.slabs ?? []), ...importedSlabs],
+        fixtures: [...(basePlan.fixtures ?? []), ...importedFixtures],
         doors: [...basePlan.doors, ...importOpenings(draft.doors, "door")],
         windows: [
           ...basePlan.windows,
@@ -595,6 +698,7 @@ export function PlanImportDialog({
         mergeImportedReview(blueprint, next, draft.review!, replacedSheet?.id),
       );
       onClose();
+      if (openModel) router.push(`/projects/${blueprint.projectId}/model`);
     } catch (reason) {
       setError((reason as Error).message);
       setBusy(false);
@@ -605,9 +709,9 @@ export function PlanImportDialog({
       !file ||
       !prepared ||
       !preview ||
-      viewType === "plan" ||
       source?.cad ||
-      !levelId
+      !levelId ||
+      (viewType === "plan" && !!replaceSheetId)
     )
       return;
     if ((blueprint.sheets?.length ?? 0) >= 24) {
@@ -634,6 +738,8 @@ export function PlanImportDialog({
           : [];
       if (operation.signal.aborted || generation.current !== run) return;
       const sheet = {
+        ...(neuralProposal ? { neural: neuralProposal } : {}),
+        ...(!source?.cad&&!previewOnly?{analysisImage:prepared.toDataURL('image/jpeg',.95)}:{}),
         id: crypto.randomUUID(),
         name: `${file.name} · página ${page}`,
         discipline,
@@ -649,8 +755,13 @@ export function PlanImportDialog({
         // Reference pages have no model scale; this field only sizes their document preview.
         metersPerUnit: 1,
         evidence: {
-          method: "manual-tracing" as const,
-          warnings: ["reference-not-calibrated"],
+          method: neuralProposal
+            ? ("neural-image-v1" as const)
+            : ("manual-tracing" as const),
+          warnings: [
+            "reference-not-calibrated",
+            ...(neuralProposal ? ["neural-image-proposal"] : []),
+          ],
           text,
         },
       };
@@ -687,20 +798,10 @@ export function PlanImportDialog({
           <h2 id="plan-import-title">
             {referenceOnly ? "Añadir lámina de referencia" : t("import.title")}
           </h2>
-          <p>{t("import.private")}</p>
-          <p className="plan-import-help">
-            {viewType === "plan" ? (
-              <>
-                Una imagen necesita una medida real: marca los extremos de una
-                cota y escribe su distancia en metros. Después analiza y revisa
-                la propuesta. Subir el archivo no basta para crear el 3D.
-              </>
-            ) : (
-              <>
-                Añade una lámina de referencia para leer y vincular sus cotas.
-                Los cortes y cuadros se conservan como evidencia documental.
-              </>
-            )}
+          <p className="plan-import-intro">
+            {viewType === "plan"
+              ? "Carga tu archivo y revisa lo que Ark encuentra. Una medida conocida permite dar tamaño real al modelo."
+              : "Añade un corte, una fachada o un cuadro para consultarlo junto a la planta."}
           </p>
         </div>
         <button
@@ -712,33 +813,91 @@ export function PlanImportDialog({
           <X size={18} />
         </button>
       </header>
+      <ol className="plan-import-steps" aria-label="Pasos para añadir el plano">
+        {(source?.cad
+          ? ["Elige el CAD", "Revisa el archivo", "Abre el editor"]
+          : viewType !== "plan"
+            ? ["Elige la lámina", "Comprueba la vista", "Guarda la referencia"]
+            : ["Elige el plano", "Indica una medida", "Revisa y guarda"]
+        ).map((label, index) => {
+          const active = draft ? 2 : source ? 1 : 0;
+          return (
+            <li
+              key={label}
+              aria-current={index === active ? "step" : undefined}
+              className={index < active ? "is-complete" : ""}
+            >
+              <span>{index < active ? <Check size={14} /> : index + 1}</span>
+              {label}
+            </li>
+          );
+        })}
+      </ol>
       <div className="plan-import-layout">
         <aside>
           <fieldset disabled={busy}>
             <legend>1 · {t("import.source")}</legend>
-            <label className="plan-upload">
-              <Upload size={18} />
-              {referenceOnly
-                ? "Elegir PDF o imagen de referencia"
-                : t("import.choose")}
-              <input
-                aria-label={
-                  referenceOnly
-                    ? "Elegir PDF o imagen de referencia"
-                    : t("import.choose")
-                }
-                type="file"
-                accept={
-                  referenceOnly
-                    ? ".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
-                    : ".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,application/pdf,image/png,image/jpeg,image/webp"
-                }
-                onChange={(event) => {
-                  const selected = event.target.files?.[0];
-                  if (selected) void load(selected, 1);
-                }}
-              />
-            </label>
+            <details
+              className="plan-import-options plan-file-options"
+              open={!source}
+            >
+              <summary>
+                {source && file ? (
+                  <span className="plan-selected-file">
+                    <FileImage size={18} />
+                    <span>{file.name}</span>
+                    <small>Cambiar</small>
+                  </span>
+                ) : (
+                  "Archivo del plano"
+                )}
+              </summary>
+              <div className="plan-import-options-body">
+                <label className="plan-upload">
+                  <Upload size={18} />
+                  <span>{file ? "Cambiar archivo" : "Elegir un archivo"}</span>
+                  <small>
+                    {referenceOnly ? "PDF o imagen" : "DWG, DXF, PDF o imagen"}{" "}
+                    · hasta 12 MB
+                  </small>
+                  <input
+                    aria-label={
+                      referenceOnly
+                        ? "Elegir PDF o imagen de referencia"
+                        : t("import.choose")
+                    }
+                    type="file"
+                    accept={
+                      referenceOnly
+                        ? ".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+                        : ".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,application/pdf,image/png,image/jpeg,image/webp"
+                    }
+                    onChange={(event) => {
+                      const selected = event.target.files?.[0];
+                      if (selected) void load(selected, 1);
+                    }}
+                  />
+                </label>
+                {documents.some((item) => item.file_data) && (
+                  <label>
+                    {t("import.documents")}
+                    <select
+                      defaultValue=""
+                      onChange={(event) => selectDocument(event.target.value)}
+                    >
+                      <option value="">Selecciona un documento</option>
+                      {documents
+                        .filter((item) => item.file_data)
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.title}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            </details>
             {source?.cad && (
               <div className="plan-cad-layers">
                 <button
@@ -770,419 +929,515 @@ export function PlanImportDialog({
                 >
                   Abrir CAD editable y preparar modelo 3D
                 </button>
-                <strong>
-                  {t("import.cadLayers")} ·{" "}
-                  {source.cad.entityCount.toLocaleString(locale)}
-                </strong>
-                <p className="plan-import-help">{t("import.cadLayersHint")}</p>
-                <div className="plan-cad-layer-list">
-                  {source.cad.layers.map((layer) => (
-                    <label className="plan-check" key={layer.name}>
-                      <input
-                        type="checkbox"
-                        checked={visibleCadLayers.includes(layer.name)}
-                        disabled={
-                          busy ||
-                          (visibleCadLayers.length === 1 &&
-                            visibleCadLayers.includes(layer.name))
-                        }
-                        onChange={(event) =>
-                          void setCadLayers(
-                            event.target.checked
-                              ? [...visibleCadLayers, layer.name]
-                              : visibleCadLayers.filter(
-                                  (name) => name !== layer.name,
-                                ),
-                          )
-                        }
-                      />
-                      <span>{layer.name}</span>
-                      <small>{layer.count.toLocaleString(locale)}</small>
-                    </label>
-                  ))}
-                </div>
-                {Object.keys(source.cad.skipped).length > 0 && (
-                  <p className="plan-import-help">
-                    {t("import.cadPartial")}{" "}
-                    {Object.entries(source.cad.skipped)
-                      .map(([kind, count]) => `${kind}: ${count}`)
-                      .join(" · ")}
-                  </p>
-                )}
+                <details className="plan-import-options">
+                  <summary>Ver capas del archivo CAD</summary>
+                  <div className="plan-import-options-body">
+                    <strong>
+                      {t("import.cadLayers")} ·{" "}
+                      {source.cad.entityCount.toLocaleString(locale)}
+                    </strong>
+                    <p className="plan-import-help">
+                      {t("import.cadLayersHint")}
+                    </p>
+                    <div className="plan-cad-layer-list">
+                      {source.cad.layers.map((layer) => (
+                        <label className="plan-check" key={layer.name}>
+                          <input
+                            type="checkbox"
+                            checked={visibleCadLayers.includes(layer.name)}
+                            disabled={
+                              busy ||
+                              (visibleCadLayers.length === 1 &&
+                                visibleCadLayers.includes(layer.name))
+                            }
+                            onChange={(event) =>
+                              void setCadLayers(
+                                event.target.checked
+                                  ? [...visibleCadLayers, layer.name]
+                                  : visibleCadLayers.filter(
+                                      (name) => name !== layer.name,
+                                    ),
+                              )
+                            }
+                          />
+                          <span>{layer.name}</span>
+                          <small>{layer.count.toLocaleString(locale)}</small>
+                        </label>
+                      ))}
+                    </div>
+                    {Object.keys(source.cad.skipped).length > 0 && (
+                      <p className="plan-import-help">
+                        {t("import.cadPartial")}{" "}
+                        {Object.entries(source.cad.skipped)
+                          .map(([kind, count]) => `${kind}: ${count}`)
+                          .join(" · ")}
+                      </p>
+                    )}
+                  </div>
+                </details>
               </div>
             )}
-            {(blueprint.sheets?.length ?? 0) > 0 && (
-              <label>
-                {t("import.importAction")}
-                <select
-                  value={replaceSheetId}
-                  onChange={(event) => {
-                    const id = event.target.value;
-                    const target = blueprint.sheets?.find(
-                      (item) => item.id === id,
-                    );
-                    setReplaceSheetId(id);
-                    setConfirmReplace(false);
-                    setDraft(null);
-                    if (target) {
-                      setLevelId(target.levelId);
-                      setDiscipline(target.discipline);
-                      setOffsetX(
-                        Number(
-                          (target.x * metersPerUnit(blueprint)).toFixed(3),
-                        ),
-                      );
-                      setOffsetY(
-                        Number(
-                          (target.y * metersPerUnit(blueprint)).toFixed(3),
-                        ),
-                      );
-                    }
-                  }}
-                >
-                  <option value="">{t("import.addSheet")}</option>
-                  {blueprint.sheets?.map((sheet) => (
-                    <option key={sheet.id} value={sheet.id}>
-                      {t("import.replaceSheet")} · {sheet.sourceName} ·{" "}
-                      {t("import.page")} {sheet.page}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label>
-              {t("import.discipline")}
-              <select
-                value={discipline}
-                disabled={!!replaceSheetId}
-                onChange={(event) => {
-                  setDiscipline(event.target.value as PlanDiscipline);
-                  setDraft(null);
-                }}
-              >
-                {disciplines.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {t(`import.discipline.${item.id}`, item.label)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {t("import.level")}
-              <select
-                value={levelId}
-                disabled={!!replaceSheetId}
-                onChange={(event) => {
-                  setLevelId(event.target.value);
-                  setDraft(null);
-                }}
-              >
-                {blueprint.levels.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} · {item.elevation} m
-                  </option>
-                ))}
-              </select>
-            </label>
-            {!source?.cad && (
-              <label>
-                Tipo de vista
-                <select
-                  value={viewType}
-                  onChange={(e) => {
-                    setViewType(e.target.value as typeof viewType);
-                    setDraft(null);
-                  }}
-                >
-                  {!referenceOnly && (
-                    <option value="plan">Planta · vista desde arriba</option>
-                  )}
-                  <option value="section">Corte</option>
-                  <option value="elevation">Elevación</option>
-                  <option value="schedule">Cuadro de elementos</option>
-                  <option value="detail">Detalle / referencia</option>
-                </select>
-              </label>
-            )}
-            {viewType !== "plan" && (
-              <p className="plan-import-help">
-                Guarda esta vista para vincular sus cotas a elementos de la
-                planta. No necesita calibración para conservarla como
-                referencia.
-              </p>
-            )}
-            <p className="plan-import-help">{t("import.multiSheetHint")}</p>
-            {documents.some((item) => item.file_data) && (
-              <label>
-                {t("import.documents")}
-                <select
-                  defaultValue=""
-                  onChange={(event) => selectDocument(event.target.value)}
-                >
-                  <option value="">—</option>
-                  {documents
-                    .filter((item) => item.file_data)
-                    .map((item) => (
+            <details className="plan-import-options">
+              <summary>
+                {disciplines.find((item) => item.id === discipline)?.label} ·{" "}
+                {selectedLevel?.name ?? "Piso seleccionado"}
+              </summary>
+              <div className="plan-import-options-body">
+                {(blueprint.sheets?.length ?? 0) > 0 && (
+                  <label>
+                    {t("import.importAction")}
+                    <select
+                      value={replaceSheetId}
+                      onChange={(event) => {
+                        const id = event.target.value;
+                        const target = blueprint.sheets?.find(
+                          (item) => item.id === id,
+                        );
+                        setReplaceSheetId(id);
+                        setConfirmReplace(false);
+                        setDraft(null);
+                        if (target) {
+                          setLevelId(target.levelId);
+                          setDiscipline(target.discipline);
+                          setOffsetX(
+                            Number(
+                              (target.x * metersPerUnit(blueprint)).toFixed(3),
+                            ),
+                          );
+                          setOffsetY(
+                            Number(
+                              (target.y * metersPerUnit(blueprint)).toFixed(3),
+                            ),
+                          );
+                        }
+                      }}
+                    >
+                      <option value="">{t("import.addSheet")}</option>
+                      {blueprint.sheets?.map((sheet) => (
+                        <option key={sheet.id} value={sheet.id}>
+                          {t("import.replaceSheet")} · {sheet.sourceName} ·{" "}
+                          {t("import.page")} {sheet.page}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label>
+                  {t("import.discipline")}
+                  <select
+                    value={discipline}
+                    disabled={!!replaceSheetId}
+                    onChange={(event) => {
+                      setDiscipline(event.target.value as PlanDiscipline);
+                      setDraft(null);
+                    }}
+                  >
+                    {disciplines.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.title}
+                        {t(`import.discipline.${item.id}`, item.label)}
                       </option>
                     ))}
-                </select>
-              </label>
-            )}
-            {source && file && (
-              <>
-                <p className="plan-file-name">{file.name}</p>
-                {source.pageCount > 1 && (
+                  </select>
+                </label>
+                <label>
+                  {t("import.level")}
+                  <select
+                    value={levelId}
+                    disabled={!!replaceSheetId}
+                    onChange={(event) => {
+                      setLevelId(event.target.value);
+                      setDraft(null);
+                    }}
+                  >
+                    {blueprint.levels.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {item.elevation} m
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {!source?.cad && (
                   <label>
-                    {t("import.page")}
+                    Tipo de vista
+                    <select
+                      value={viewType}
+                      onChange={(e) => {
+                        setViewType(e.target.value as typeof viewType);
+                        setDraft(null);
+                      }}
+                    >
+                      {!referenceOnly && (
+                        <option value="plan">
+                          Planta · vista desde arriba
+                        </option>
+                      )}
+                      <option value="section">Corte</option>
+                      <option value="elevation">Elevación</option>
+                      <option value="schedule">Cuadro de elementos</option>
+                      <option value="detail">Detalle / referencia</option>
+                    </select>
+                  </label>
+                )}
+                {viewType !== "plan" && (
+                  <p className="plan-import-help">
+                    Guarda esta vista para vincular sus cotas a elementos de la
+                    planta. No necesita calibración para conservarla como
+                    referencia.
+                  </p>
+                )}
+                <p className="plan-import-help">{t("import.multiSheetHint")}</p>
+                {source && file && (
+                  <>
+                    {source.pageCount > 1 && (
+                      <label>
+                        {t("import.page")}
+                        <input
+                          type="number"
+                          min={1}
+                          max={source.pageCount}
+                          value={page}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            if (value >= 1 && value <= source.pageCount)
+                              void load(file, value, discipline, viewType);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </>
+                )}
+              </div>
+            </details>
+          </fieldset>
+          {source && (
+            <details className="plan-import-options plan-image-options">
+              <summary>Mejorar la imagen · opcional</summary>
+              <div className="plan-import-options-body">
+                <fieldset disabled={busy || !!draft}>
+                  <legend>{t("import.prepare")}</legend>
+                  <div className="plan-import-pair">
+                    <button
+                      className="pm-button"
+                      onClick={() => {
+                        setRotation((value) => (value + 90) % 360);
+                        resetAnalysis();
+                      }}
+                    >
+                      <RotateCw size={15} />
+                      90°
+                    </button>
+                    <label>
+                      {t("import.rotation")}
+                      <input
+                        type="number"
+                        min={-360}
+                        max={360}
+                        step={0.1}
+                        value={rotation}
+                        onChange={(event) => {
+                          setRotation(Number(event.target.value));
+                          resetAnalysis();
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    {t("import.contrast")} · {contrast}%
                     <input
-                      type="number"
-                      min={1}
-                      max={source.pageCount}
-                      value={page}
+                      type="range"
+                      min={70}
+                      max={200}
+                      value={contrast}
                       onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (value >= 1 && value <= source.pageCount)
-                          void load(file, value, discipline, viewType);
+                        setContrast(Number(event.target.value));
+                        setDraft(null);
                       }}
                     />
                   </label>
-                )}
-              </>
-            )}
-          </fieldset>
-          {source && (
-            <fieldset disabled={busy || !!draft}>
-              <legend>2 · {t("import.prepare")}</legend>
-              <div className="plan-import-pair">
-                <button
-                  className="pm-button"
-                  onClick={() => {
-                    setRotation((value) => (value + 90) % 360);
-                    resetAnalysis();
-                  }}
-                >
-                  <RotateCw size={15} />
-                  90°
-                </button>
-                <label>
-                  {t("import.rotation")}
-                  <input
-                    type="number"
-                    min={-360}
-                    max={360}
-                    step={0.1}
-                    value={rotation}
-                    onChange={(event) => {
-                      setRotation(Number(event.target.value));
+                  <label className="plan-check">
+                    <input
+                      type="checkbox"
+                      checked={denoise}
+                      onChange={(event) => setDenoise(event.target.checked)}
+                    />
+                    {t("import.denoise")}
+                  </label>
+                  <button
+                    className="pm-button"
+                    onClick={() => {
+                      setPerspective(!perspective);
                       resetAnalysis();
                     }}
-                  />
-                </label>
+                  >
+                    {t(
+                      perspective
+                        ? "import.cancelPerspective"
+                        : "import.perspective",
+                    )}
+                  </button>
+                  {perspective && (
+                    <button
+                      className="pm-button"
+                      disabled={points.length !== 4}
+                      onClick={() => {
+                        try {
+                          setSource({
+                            ...source,
+                            canvas: rectifyPlan(prepared!, points),
+                            text: [],
+                          });
+                          setRotation(0);
+                          setContrast(100);
+                          setPerspective(false);
+                          resetAnalysis();
+                        } catch (reason) {
+                          setError((reason as Error).message);
+                        }
+                      }}
+                    >
+                      {t("import.rectify")}
+                    </button>
+                  )}
+                </fieldset>
               </div>
-              <label>
-                {t("import.contrast")} · {contrast}%
-                <input
-                  type="range"
-                  min={70}
-                  max={200}
-                  value={contrast}
-                  onChange={(event) => {
-                    setContrast(Number(event.target.value));
-                    setDraft(null);
-                  }}
-                />
-              </label>
-              <label className="plan-check">
-                <input
-                  type="checkbox"
-                  checked={denoise}
-                  onChange={(event) => setDenoise(event.target.checked)}
-                />
-                {t("import.denoise")}
-              </label>
-              <button
-                className="pm-button"
-                onClick={() => {
-                  setPerspective(!perspective);
-                  resetAnalysis();
-                }}
-              >
-                {t(
-                  perspective
-                    ? "import.cancelPerspective"
-                    : "import.perspective",
-                )}
-              </button>
-              {perspective && (
-                <button
-                  className="pm-button"
-                  disabled={points.length !== 4}
-                  onClick={() => {
-                    try {
-                      setSource({
-                        ...source,
-                        canvas: rectifyPlan(prepared!, points),
-                        text: [],
-                      });
-                      setRotation(0);
-                      setContrast(100);
-                      setPerspective(false);
-                      resetAnalysis();
-                    } catch (reason) {
-                      setError((reason as Error).message);
-                    }
-                  }}
-                >
-                  {t("import.rectify")}
-                </button>
-              )}
-            </fieldset>
+            </details>
           )}
-          {source && !perspective && viewType === "plan" && (
-            <fieldset disabled={busy || !!draft}>
-              <legend>3 · {t("import.calibrate")}</legend>
-              <p>{t("import.twoPoints")}</p>
-              <details>
-                <summary>{t("import.coordinates")}</summary>
-                {[0, 1].map((index) => (
-                  <div className="plan-import-pair" key={index}>
-                    {[0, 1].map((axis) => (
-                      <label key={axis}>
-                        {index + 1} · {axis === 0 ? "X" : "Y"}
-                        <input
-                          type="number"
-                          min={0}
-                          max={axis === 0 ? prepared?.width : prepared?.height}
-                          value={points[index]?.[axis] ?? ""}
-                          onChange={(event) =>
-                            setPoints((current) => {
-                              const next: PlanPoint[] = [
-                                [...(current[0] ?? [0, 0])],
-                                [...(current[1] ?? [0, 0])],
-                              ];
-                              next[index][axis] = Number(event.target.value);
-                              return next;
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
-                  </div>
-                ))}
-              </details>
-              <label>
+          {source && !source.cad && !perspective && viewType === "plan" && (
+            <fieldset
+              className="plan-measure-section"
+              disabled={busy || !!draft}
+            >
+              <legend>2 · {t("import.calibrate")}</legend>
+              <p className="plan-field-explanation">
+                Esta medida convierte el tamaño de la imagen a metros. Se usa
+                para las dimensiones y las áreas del modelo.
+              </p>
+              {savedScale && (
+                <p className="plan-field-explanation">
+                  Escala recuperada del plano guardado. Puedes usarla o volver a
+                  marcar una medida.
+                </p>
+              )}
+              <ol className="plan-measure-instructions">
+                <li>
+                  En la imagen, pulsa el inicio y el final de un tramo que
+                  conozcas.
+                </li>
+                <li>Escribe abajo cuánto mide en la realidad.</li>
+              </ol>
+              <div className="plan-measure-status" role="status">
+                <span>{Math.min(points.length, 2)}/2 puntos marcados</span>
+                {!!points.length && (
+                  <button
+                    type="button"
+                    className="pm-button"
+                    onClick={() => {
+                      setPoints([]);
+                      setDistance("");
+                    }}
+                  >
+                    Volver a marcar
+                  </button>
+                )}
+              </div>
+              <label htmlFor="plan-reference-distance">
                 {t("import.distance")}
                 <input
+                  id="plan-reference-distance"
                   type="number"
                   min={0.01}
                   max={1000}
-                  step={0.01}
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="Ej. 4,50"
+                  aria-describedby="plan-measure-help"
                   value={distance}
                   onChange={(event) => setDistance(event.target.value)}
                 />
               </label>
-              {(blueprint.sheets?.length ?? 0) > 0 && (
-                <div className="plan-import-pair">
-                  <label>
-                    {t("import.offsetX")}
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={offsetX}
-                      onChange={(event) =>
-                        setOffsetX(Number(event.target.value))
-                      }
-                    />
-                  </label>
-                  <label>
-                    {t("import.offsetY")}
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={offsetY}
-                      onChange={(event) =>
-                        setOffsetY(Number(event.target.value))
-                      }
-                    />
-                  </label>
-                </div>
-              )}
-              <label>
-                {t("import.wallHeight")}
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  step={0.05}
-                  value={wallHeight}
-                  onChange={(event) =>
-                    setWallHeight(Number(event.target.value))
-                  }
-                />
-              </label>
-              <label>
-                {t("import.threshold")} · {threshold}
-                <input
-                  type="range"
-                  min={50}
-                  max={220}
-                  value={threshold}
-                  onChange={(event) => setThreshold(Number(event.target.value))}
-                />
-              </label>
-              <label className="plan-check">
-                <input
-                  type="checkbox"
-                  checked={manual}
-                  disabled={!!source?.cad}
-                  onChange={(event) => setManual(event.target.checked)}
-                />
-                {t("import.manual")}
-              </label>
+              <p id="plan-measure-help" className="plan-field-explanation">
+                Usa una longitud, no el área del ambiente en m².
+              </p>
               <label className="plan-check">
                 <input
                   type="checkbox"
                   checked={ocr}
                   onChange={(event) => setOcr(event.target.checked)}
                 />
-                {t("import.ocr")}
+                <span>
+                  {t("import.ocr")}
+                  <small>
+                    Ayuda a leer los nombres y las cotas. Puede tardar hasta 2
+                    minutos.
+                  </small>
+                </span>
               </label>
-              <button
-                className="pm-button pm-primary"
-                disabled={
-                  viewType !== "plan" ||
-                  points.length !== 2 ||
-                  Number(distance) <= 0 ||
-                  !Number.isFinite(Number(distance)) ||
-                  wallHeight < 1 ||
-                  wallHeight > 20 ||
-                  !Number.isFinite(offsetX) ||
-                  offsetX < 0 ||
-                  !Number.isFinite(offsetY) ||
-                  offsetY < 0
-                }
-                onClick={() => void analyze()}
-              >
-                {t("import.analyze")}
-              </button>
+              <details className="plan-import-options">
+                <summary>Ajustes avanzados · opcional</summary>
+                <div className="plan-import-options-body">
+                  <p className="plan-field-explanation">
+                    Puedes dejar estos valores como están y revisarlos después.
+                  </p>
+                  <details className="plan-import-options">
+                    <summary>{t("import.coordinates")}</summary>
+                    {[0, 1].map((index) => (
+                      <div className="plan-import-pair" key={index}>
+                        {[0, 1].map((axis) => (
+                          <label key={axis}>
+                            {index + 1} · {axis === 0 ? "X" : "Y"}
+                            <input
+                              type="number"
+                              min={0}
+                              max={
+                                axis === 0 ? prepared?.width : prepared?.height
+                              }
+                              value={points[index]?.[axis] ?? ""}
+                              onChange={(event) =>
+                                setPoints((current) => {
+                                  const next: PlanPoint[] = [
+                                    [...(current[0] ?? [0, 0])],
+                                    [...(current[1] ?? [0, 0])],
+                                  ];
+                                  next[index][axis] = Number(
+                                    event.target.value,
+                                  );
+                                  return next;
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                  </details>
+                  {(blueprint.sheets?.length ?? 0) > 0 && (
+                    <div className="plan-import-pair">
+                      <label>
+                        {t("import.offsetX")}
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={offsetX}
+                          onChange={(event) =>
+                            setOffsetX(Number(event.target.value))
+                          }
+                        />
+                      </label>
+                      <label>
+                        {t("import.offsetY")}
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={offsetY}
+                          onChange={(event) =>
+                            setOffsetY(Number(event.target.value))
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
+                  <label>
+                    {t("import.wallHeight")}
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      step={0.05}
+                      value={wallHeight}
+                      onChange={(event) => {
+                        setWallHeight(Number(event.target.value));
+                        setWallHeightSet(true);
+                      }}
+                    />
+                  </label>
+                  <p className="plan-field-explanation">
+                    Se usa solo como altura inicial de los muros en 3D. El valor
+                    de 2,80 m es una estimación hasta que lo confirmes.
+                  </p>
+                  <label className="plan-check">
+                    <input
+                      type="checkbox"
+                      checked={manual}
+                      disabled={!!source?.cad}
+                      onChange={(event) => setManual(event.target.checked)}
+                    />
+                    {t("import.manual")}
+                  </label>
+                </div>
+              </details>
+              {!draft && !replaceSheetId && (
+                <p className="plan-field-explanation">
+                  Si no conoces ninguna longitud, elige «Guardar plano sin
+                  medidas». Podrás indicarla después para generar el 3D.
+                </p>
+              )}
             </fieldset>
           )}
         </aside>
         <main>
+          {previewOnly&&<p className="pm-alert" role="alert">Esta hoja antigua solo conservó una vista previa reducida. Para detectar muebles pequeños, pulsa «Cambiar» y carga de nuevo la imagen original. Al guardarla se conservará su resolución de análisis.</p>}
+          {prepared &&
+            source &&
+            !source.cad &&
+            viewType === "plan" &&
+            discipline === "architecture" && (
+              <RasterNeuralPanel
+                canvas={prepared}
+                projectId={blueprint.projectId}
+                proposal={neuralProposal}
+                disabled={busy || !!draft}
+                onBusy={(value) => {
+                  setNeuralBusy(value);
+                  setBusy(value);
+                }}
+                onResult={(proposal) => {
+                  setNeuralResult({ canvas: prepared, proposal });
+                  setManual(false);
+                  setShowNeural(true);
+                  setDraft(null);
+                }}
+              />
+            )}
+          <div className="plan-preview-heading">
+            <strong>{draft ? "Lo que encontró Ark" : "Tu plano"}</strong>
+            <span>{source ? selectedLevel?.name : "Vista previa"}</span>
+          </div>
+          {neuralProposal && (
+            <label className="plan-check">
+              <input
+                type="checkbox"
+                checked={showNeural}
+                onChange={(e) => setShowNeural(e.target.checked)}
+              />
+              Mostrar detecciones de IA sobre la imagen
+            </label>
+          )}
+          <p className="plan-preview-destination">
+            <Info size={14} />
+            <span>
+              Se guardará en{" "}
+              <b>
+                Plano 2D → Hojas del proyecto →{" "}
+                {selectedLevel?.name ?? "Piso seleccionado"}
+              </b>
+            </span>
+          </p>
           <p className="plan-import-help">
-            {viewType !== "plan"
-              ? "Vista de referencia · verifica que las cotas y los textos sean legibles."
-              : t(
-                  draft
-                    ? "import.reviewHint"
-                    : perspective
-                      ? "import.fourPoints"
-                      : "import.twoPoints",
-                )}
+            {!source
+              ? "Elige un archivo. Aparecerá aquí para revisarlo."
+              : source.cad
+                ? "El archivo conserva sus líneas y capas. Abre el CAD para revisar y preparar su modelo."
+                : viewType !== "plan"
+                  ? "Vista de referencia · verifica que las cotas y los textos sean legibles."
+                  : t(
+                      draft
+                        ? "import.reviewHint"
+                        : perspective
+                          ? "import.fourPoints"
+                          : "import.twoPoints",
+                    )}
           </p>
           {source?.cad && (
             <div className="plan-cad-zoom" aria-label={t("import.cadZoom")}>
@@ -1233,6 +1488,13 @@ export function PlanImportDialog({
                     event.clientX,
                     event.clientY,
                   ).matrixTransform(matrix.inverse());
+                  if (
+                    point.x < 0 ||
+                    point.y < 0 ||
+                    point.x > prepared.width ||
+                    point.y > prepared.height
+                  )
+                    return;
                   setPoints((current) =>
                     current.length >= (perspective ? 4 : 2)
                       ? [[point.x, point.y]]
@@ -1241,17 +1503,19 @@ export function PlanImportDialog({
                 }}
               >
                 <image
-                  href={preview}
+                  href={
+                    showNeural && neuralProposal
+                      ? neuralProposal.overlay
+                      : preview
+                  }
                   width={prepared.width}
                   height={prepared.height}
                 />
                 {draft?.rooms.map((room) => (
-                  <rect
+                  <path
                     key={room.id}
-                    x={room.x}
-                    y={room.y}
-                    width={room.width}
-                    height={room.height}
+                    d={roomPath(room)}
+                    fillRule="evenodd"
                     fill="#22c55e"
                     opacity={0.16}
                   />
@@ -1320,7 +1584,27 @@ export function PlanImportDialog({
               </div>
             )}
           </div>
-          {busy && (
+          <div className="plan-import-destination">
+            <Info size={18} />
+            <div>
+              <strong>¿Dónde van estos datos?</strong>
+              <p>
+                El plano se guarda en{" "}
+                <b>
+                  Plano 2D → Hojas del proyecto →{" "}
+                  {selectedLevel?.name ?? "Piso seleccionado"}
+                </b>
+                . La medida define el tamaño real; la altura se usa para
+                levantar los muros en <b>Estudio 3D</b>.
+              </p>
+              <p>
+                {draft
+                  ? "Guarda la propuesta para incorporar sus elementos al proyecto."
+                  : "Puedes explorar esta vista sin guardar. Elige Guardar cuando quieras incorporarla al proyecto."}
+              </p>
+            </div>
+          </div>
+          {busy && !neuralBusy && (
             <p role="status">
               {t("import.processing")} {Math.round(progress * 100)}%
             </p>
@@ -1362,20 +1646,32 @@ export function PlanImportDialog({
           )}
           {draft && (
             <section className="plan-import-result">
-              <h3>4 · {t("import.review")}</h3>
+              <h3>3 · {t("import.review")}</h3>
               <p>
                 {draft.walls.length} {t("editor.walls")} · {draft.rooms.length}{" "}
                 {t("editor.rooms")} · {draft.review!.text.length}{" "}
                 {t("import.texts")}
               </p>
-              {!!draft.slabs?.length && (
+              {neuralProposal && (
                 <p>
-                  {draft.slabs.length} superficies propuestas a partir del
-                  color. Revisa sus contornos: el color no identifica materiales
-                  ni mobiliario.
+                  {draft.doors.length} puertas · {draft.windows.length} ventanas
+                  · {draft.fixtures?.length ?? 0} objetos con familia 3D. Los
+                  símbolos sin muro asociado quedan en la superposición para
+                  revisión.
                 </p>
               )}
-              <p>{t("import.limitations")}</p>
+              {!!draft.slabs?.length && (
+                <p>
+                  {neuralProposal
+                    ? `${draft.slabs.length} contornos cerrados propuestos a partir de los muros de IA. Revisa sus límites y huecos.`
+                    : `${draft.slabs.length} superficies propuestas. Revisa sus contornos antes de incorporarlas al modelo.`}
+                </p>
+              )}
+              <p>
+                {neuralProposal
+                  ? "La red propone categorías y contornos. El 3D conserva los elementos compatibles; revisa alturas, encuentros y símbolos que quedaron sin asociación."
+                  : t("import.limitations")}
+              </p>
               {discipline !== "architecture" && (
                 <p>{t("import.referenceOnly")}</p>
               )}
@@ -1408,9 +1704,15 @@ export function PlanImportDialog({
                 <div>
                   <strong>{t("import.symbolProposals")}</strong>
                   <p className="plan-import-help">
-                    {t("import.symbolProposalsHint")}
+                    {neuralProposal
+                      ? "Comprueba cada recorte: puedes corregir puerta/ventana y desmarcar una propuesta incorrecta. Las alturas todavía son aproximadas."
+                      : t("import.symbolProposalsHint")}
                   </p>
-                  {[...draft.doors, ...draft.windows].map((item) => (
+                  {[...draft.doors, ...draft.windows].map((item,index) => (
+                    <fieldset className="symbol-review-card" key={item.id}>
+                    <legend>Abertura {index+1}</legend>
+                    {neuralProposal&&prepared&&preview&&<svg width="160" height="100" viewBox={`${item.x-Math.max(80,item.width*1.2)/2} ${item.y-Math.max(80,item.width*1.2)/2} ${Math.max(80,item.width*1.2)} ${Math.max(80,item.width*1.2)}`} role="img" aria-label={`Recorte de abertura ${index+1}`}><image href={preview} width={prepared.width} height={prepared.height}/><circle cx={item.x} cy={item.y} r="5" fill="none" stroke="#b22a84" strokeWidth="2"/></svg>}
+                    {neuralProposal&&<label>Tipo según el plano<select aria-label={`Tipo de abertura ${index+1}`} value={draft.doors.some(o=>o.id===item.id)?'door':'window'} onChange={e=>setDraft(reclassifyRasterOpening(draft,item.id,e.target.value as 'door'|'window',wallHeight))}><option value="door">Puerta</option><option value="window">Ventana</option></select></label>}
                     <label className="plan-check" key={item.id}>
                       <input
                         type="checkbox"
@@ -1423,11 +1725,11 @@ export function PlanImportDialog({
                           )
                         }
                       />
-                      {item.id.startsWith("door")
+                      {draft.doors.some((door) => door.id === item.id)
                         ? t("editor.door")
                         : t("editor.window")}{" "}
                       · ({Math.round(item.x)}, {Math.round(item.y)})
-                    </label>
+                    </label></fieldset>
                   ))}
                   {draft.stairs?.map((item) => (
                     <label className="plan-check" key={item.id}>
@@ -1498,8 +1800,33 @@ export function PlanImportDialog({
                   {t("import.confirmReplacement")}
                 </label>
               )}
-              <div className="plan-import-pair">
+            </section>
+          )}
+        </main>
+      </div>
+      {source && !source.cad && viewType === "plan" && !perspective && (
+        <footer className="plan-import-footer">
+          <div role="status">
+            <strong>
+              {busy
+                ? "Procesando plano…"
+                : draft
+                  ? "Revisa antes de guardar"
+                  : "Siguiente paso"}
+            </strong>
+            <p>
+              {draft
+                ? "Se guardarán los elementos de esta propuesta en Plano 2D y Estudio 3D."
+                : !neuralProposal && !manual && discipline === "architecture"
+                  ? "Pulsa «Detectar elementos con IA» en el panel del plano."
+                  : measureHint}
+            </p>
+          </div>
+          <div className="plan-import-footer-actions">
+            {draft ? (
+              <>
                 <button
+                  type="button"
                   className="pm-button"
                   disabled={busy}
                   onClick={() => setDraft(null)}
@@ -1507,17 +1834,48 @@ export function PlanImportDialog({
                   {t("import.back")}
                 </button>
                 <button
+                  type="button"
                   className="pm-button pm-primary"
                   disabled={busy || (!!replaceSheetId && !confirmReplace)}
-                  onClick={() => void save()}
+                  onClick={() => void save(!!neuralProposal)}
                 >
-                  {t("import.save")}
+                  {neuralProposal ? "Guardar y ver en 3D" : t("import.save")}
                 </button>
-              </div>
-            </section>
-          )}
-        </main>
-      </div>
+              </>
+            ) : (
+              <>
+                {!replaceSheetId && (
+                  <button
+                    type="button"
+                    className="pm-button"
+                    disabled={busy || !prepared}
+                    onClick={() => void saveReference()}
+                  >
+                    Guardar plano sin medidas
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="pm-button pm-primary"
+                  disabled={
+                    busy ||
+                    !prepared ||
+                    !analysisReady ||
+                    (!manual &&
+                      discipline === "architecture" &&
+                      !neuralProposal)
+                  }
+                  onClick={() => void analyze()}
+                >
+                  {neuralProposal
+                    ? "Preparar 3D con estas detecciones"
+                    : t("import.analyze")}
+                </button>
+              </>
+            )}
+          </div>
+        </footer>
+      )}
     </dialog>
   );
 }

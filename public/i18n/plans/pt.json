@@ -1,6 +1,8 @@
 {
   "import.eyebrow": "Origem → geometria → revisão → modelo",
-  "import.title": "Importar e calibrar planta",
+  "import.title": "Adicionar planta",
+  "editor.evidence.unmeasured": "Planta salva · falta uma medida conhecida",
+  "editor.evidence.warning.reference-not-calibrated": "Planta salva sem medidas. Informe um comprimento conhecido para detectar elementos e gerar o modelo 3D.",
   "import.private": "A análise e o OCR são executados neste navegador. O rascunho só é salvo no projeto após a confirmação.",
   "import.close": "Fechar importação",
   "import.source": "Arquivo de origem",

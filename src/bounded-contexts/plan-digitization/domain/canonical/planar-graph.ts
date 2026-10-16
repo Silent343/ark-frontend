@@ -27,9 +27,9 @@ export function buildPlanarGraph(
   for (const s of input)
     if (![...s.start, ...s.end].every(Number.isFinite))
       throw new Error("Non-finite topology input.");
-  const lines = input.filter(
+  const lines = extendCornerEndpoints(input.filter(
     (s) => Math.hypot(...sub(s.end, s.start)) > snapTolerance,
-  );
+  ));
   const splits = lines.map(() => [0, 1]);
   const bounds = lines
     .map((s, i) => ({
@@ -230,3 +230,31 @@ export function buildPlanarGraph(
   }
   return graph;
 }
+
+  function extendCornerEndpoints(segments: GraphSegment[], maxExtension = 0.18): GraphSegment[] {
+    return segments.map((seg, i) => {
+      const dx = seg.end[0] - seg.start[0], dy = seg.end[1] - seg.start[1];
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) return seg;
+      const ux = dx / len, uy = dy / len;
+
+      let start: Point2 = [seg.start[0], seg.start[1]];
+      let end: Point2 = [seg.end[0], seg.end[1]];
+
+      for (let j = 0; j < segments.length; j++) {
+        if (i === j) continue;
+        const other = segments[j];
+        for (const pt of [other.start, other.end]) {
+          const dStart = Math.hypot(pt[0] - start[0], pt[1] - start[1]);
+          if (dStart > 1e-4 && dStart <= maxExtension) {
+            start = [seg.start[0] - ux * Math.min(dStart, maxExtension), seg.start[1] - uy * Math.min(dStart, maxExtension)];
+          }
+          const dEnd = Math.hypot(pt[0] - end[0], pt[1] - end[1]);
+          if (dEnd > 1e-4 && dEnd <= maxExtension) {
+            end = [seg.end[0] + ux * Math.min(dEnd, maxExtension), seg.end[1] + uy * Math.min(dEnd, maxExtension)];
+          }
+        }
+      }
+      return { ...seg, start, end };
+    });
+  }
