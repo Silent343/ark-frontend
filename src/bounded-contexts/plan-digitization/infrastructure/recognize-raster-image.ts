@@ -9,6 +9,7 @@ export async function recognizeRasterImage(
   modelId: string,
   signal: AbortSignal,
   symbols = false,
+  symbolModelId?: string,
 ): Promise<RasterNeuralProposal> {
   const result = await requestJson<NeuralPlanResult>(
     `/api/v1/projects/${projectId}/plan-detection`,
@@ -21,12 +22,14 @@ export async function recognizeRasterImage(
         focus: true,
         details: true,
         symbols,
+        ...(symbols&&symbolModelId?{symbolModelId}:{}),
       }),
     },
   );
   if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
   if (result.model.id !== modelId)
     throw new Error("El modelo recibido es distinto al seleccionado.");
+  if(symbols&&symbolModelId&&result.symbols?.model.id!==symbolModelId)throw new Error('El detector de objetos recibido no corresponde al seleccionado.');
   const geometryCanvas = document.createElement("canvas"),
     factor = Math.min(1, 1024 / Math.max(canvas.width, canvas.height));
   geometryCanvas.width = Math.round(canvas.width * factor);

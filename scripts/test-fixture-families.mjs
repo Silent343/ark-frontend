@@ -63,6 +63,10 @@ for (const family of FIXTURE_FAMILIES) {
   }
 }
 const item = fixture("chair");
+const carParts=buildFixtureParts([fixture('vehicle')],100,200,60);
+assert(carParts.some(b=>b.finish==='metal'&&b.shape==='sphere'),'Car body has a rounded generic silhouette rather than one full-footprint block');
+assert(carParts.some(b=>b.finish==='glass')&&carParts.some(b=>b.finish==='ceramic'),'Car cabin and headlights are distinct, batched parts');
+assert.equal(carParts.find(b=>b.finish==='dark'&&b.shape==='sphere').parts.length,4,'Four wheels retain the same selectable vehicle ID');
 const sanitary = buildFixtureParts([fixture("toilet")], 100, 200, 60, {
   fixture: { familyId: "toilet-floor", finish: "dark", elevationM: 0 },
 });

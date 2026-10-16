@@ -1,7 +1,7 @@
 import type { Blueprint } from './entities/blueprint';
-export const SYMBOL_KINDS = ['chair','table','sofa','bed','plant','stair'] as const;
+export const SYMBOL_KINDS = ['chair','table','sofa','bed','plant','stair','vehicle'] as const;
 export type SymbolKind = typeof SYMBOL_KINDS[number];
-export const SYMBOL_LABELS: Record<SymbolKind,string> = {chair:'Silla',table:'Mesa',sofa:'Sofá',bed:'Cama',plant:'Planta',stair:'Escalera'};
+export const SYMBOL_LABELS: Record<SymbolKind,string> = {chair:'Silla',table:'Mesa',sofa:'Sofá',bed:'Cama',plant:'Planta',stair:'Escalera',vehicle:'Coche'};
 export interface SymbolDetection {
   id:string; kind:SymbolKind; score:number; box:[number,number,number,number];
   status:'proposed'|'confirmed'|'rejected'; rotation:0|90|180|270; stairType?:'straight'|'spiral';
@@ -18,8 +18,8 @@ export function validSymbols(value:unknown,size:{width:number;height:number}):va
   const s=value as SymbolProposal,m=s.model;
   if(!m)return false;
   const known=m.id==='floorcad-symbols-v1'&&m.revision==='02995225d7aed598bc7e0214f5b7f3fe7fe95657'&&m.checkpointSha256==='be1a5a404c5ad1c454ba7531e2c16548a6330945319cbf989751ff73578b494c'&&m.classes?.join(' ')===CLASSES;
-  const pilot=m.id==='ark-objects-pilot-v1'&&/^[a-f0-9]{40}$/.test(m.revision)&&/^[a-f0-9]{64}$/.test(m.checkpointSha256)&&
-    m.classes?.join(',')==='chair,table,sofa,bed,plant,stair'&&m.training?.independentValidation===false&&m.training.annotationQuality==='agent-provisional'&&
+  const pilot=['ark-objects-pilot-v1','ark-objects-pilot-v2'].includes(m.id)&&/^[a-f0-9]{40}$/.test(m.revision)&&/^[a-f0-9]{64}$/.test(m.checkpointSha256)&&
+    m.classes?.join(',')===(m.id==='ark-objects-pilot-v2'?'chair,table,sofa,bed,plant,stair,vehicle':'chair,table,sofa,bed,plant,stair')&&m.training?.independentValidation===false&&m.training.annotationQuality==='agent-provisional'&&
     /^[a-f0-9]{64}$/.test(m.training.datasetSha256)&&Number.isInteger(m.training.images)&&m.training.images>0&&m.training.images<=10000&&Number.isInteger(m.training.epochs)&&m.training.epochs>=1&&m.training.epochs<=1000;
   if((!known&&!pilot)||!Array.isArray(m.classes)||!/^[a-f0-9]{64}$/.test(m.artifactSha256)||m.usage!=='experimental-research'||m.size!==640||
     s.threshold!==.35||!Number.isInteger(s.passes)||s.passes<1||s.passes>10||
@@ -47,7 +47,7 @@ export function symbolGeometry(proposal:SymbolProposal|undefined,levelId:string,
       stairs.push({id:`neural-${i.id}`,levelId,x,y,type:i.stairType,radius:(i.stairType==='spiral'?Math.min(width,depth):width)/2,length:depth,rotation:i.rotation,rise});
     }else {
       fixtures.push({id:`neural-${i.id}`,levelId,x,y,width,depth,rotation:i.rotation,kind:i.kind,
-        height:{chair:.85,table:.75,sofa:.85,bed:.55,plant:1.0}[i.kind],name:`${SYMBOL_LABELS[i.kind]} · IA revisada`,evidence:'neural-box',sourceIds:[i.id]});
+        height:{chair:.85,table:.75,sofa:.85,bed:.55,plant:1.0,vehicle:1.5}[i.kind],name:`${SYMBOL_LABELS[i.kind]} · IA revisada`,evidence:'neural-box',sourceIds:[i.id]});
     }
   }
   return {fixtures,stairs};

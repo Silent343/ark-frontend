@@ -35,6 +35,30 @@ export interface NeuralSpace {
   score: number;
 }
 
+/** Sub-threshold islands of another floor category are semantic uncertainty,
+ * not holes through the floor. Never relabel background, walls or railings. */
+export function stabilizeFloorClasses(mask:Uint8Array,scores:Uint8Array,width:number,height:number){
+  const output=mask.slice(),seen=new Uint8Array(mask.length),queue=new Int32Array(mask.length);
+  const floor=(i:number)=>![0,2,8].includes(mask[i])&&scores[i]>=140;
+  for(let seed=0;seed<mask.length;seed++){
+    if(seen[seed]||!floor(seed))continue;
+    const label=mask[seed],neighbors=new Map<number,number>();let head=0,tail=1,closed=true;queue[0]=seed;seen[seed]=1;
+    while(head<tail){
+      const at=queue[head++],x=at%width,y=Math.floor(at/width);
+      for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]]){
+        const nx=x+dx,ny=y+dy,i=ny*width+nx;
+        if(nx<0||ny<0||nx>=width||ny>=height||!floor(i)){closed=false;continue;}
+        if(mask[i]!==label){neighbors.set(mask[i],(neighbors.get(mask[i])??0)+1);continue;}
+        if(!seen[i]){seen[i]=1;queue[tail++]=i;}
+      }
+    }
+    if(tail>=64||!closed||!neighbors.size)continue;
+    const dominant=[...neighbors].sort((a,b)=>b[1]-a[1])[0][0];
+    for(let i=0;i<tail;i++)output[queue[i]]=dominant;
+  }
+  return output;
+}
+
 function simplifyPath(points: Point2[], tolerance: number): Point2[] {
   if (points.length < 3) return points;
   const a = points[0],
@@ -103,6 +127,7 @@ export function extractNeuralSpaces(
     mask.some((n) => n >= SPACE_CLASSES.length)
   )
     throw new Error("Máscara de espacios no válida.");
+  mask=stabilizeFloorClasses(mask,scores,width,height);
   const seen = new Uint8Array(mask.length),
     component = new Int32Array(mask.length),
     queue = new Int32Array(mask.length);

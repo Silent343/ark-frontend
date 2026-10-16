@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import {loadDomain} from "./lib/domain-loader.mjs";
 const root="src/bounded-contexts/plan-digitization/domain/";
-const {rasterNeuralProposal,applyRasterNeural,validRasterNeural}=loadDomain(root+"raster-neural");
+const {rasterNeuralProposal,applyRasterNeural,validRasterNeural,preserveReviewedSymbols}=loadDomain(root+"raster-neural");
 const {withoutSheetGeometry}=loadDomain(root+"plan-provenance");
 const {extractNeuralSpaces,SPACE_CLASSES}=loadDomain(root+"neural-spaces");
 const {refineRasterWalls}=loadDomain(root+"raster-wall-refinement");
 const {fuseRasterWalls}=loadDomain(root+'raster-detail-geometry');
 const {reclassifyRasterOpening}=loadDomain(root+'raster-opening-review');
+const {recoverRasterWindowHosts}=loadDomain(root+'raster-opening-hosts');
 const {roomWithBounds,roomPath}=loadDomain(root+"room-geometry");
 const {canonicalFromBlueprint,canonicalRenderBlueprint}=loadDomain(root+"canonical/blueprint-adapter");
 const {validateCanonicalGraph}=loadDomain(root+"canonical/validate-graph");
@@ -18,7 +19,13 @@ const model={id:"cubicasa-multitask-v1",revision:"a".repeat(40),checkpointSha256
 const result={width:size,height:size,mask:Buffer.from(mask).toString("base64"),scores:Buffer.from(scores).toString("base64"),
   content:{x:64,y:0,width:384,height:512},sourceSize:{width:600,height:800},overlay:"data:image/png;base64,AA==",elapsedMs:10,counts:model.classes.map(()=>0),model};
 const p=rasterNeuralProposal(result);
+const reviewedSymbols={items:[{id:'reviewed-object',confirmed:true}]};
+assert.equal(preserveReviewedSymbols(p,{...p,symbols:reviewedSymbols},true).symbols,reviewedSymbols);
+assert.equal(preserveReviewedSymbols(p,{...p,symbols:reviewedSymbols},false).symbols,undefined,'same dimensions do not establish source identity');
+assert.equal(preserveReviewedSymbols({...p,sourceSize:{width:601,height:800}},{...p,symbols:reviewedSymbols},true).symbols,undefined);
+assert.equal(preserveReviewedSymbols({...p,symbols:{items:[]}},{...p,symbols:reviewedSymbols},true).symbols.items.length,0,'fresh object inference takes precedence');
 assert(validRasterNeural(p));assert(p.walls.length>0);assert.equal(p.instances.length,1);assert.equal(p.instances[0].kind,"equipment");
+assert(validRasterNeural({...p,focusModelId:'cubicasa-multitask-v1'}));assert(!validRasterNeural({...p,focusModelId:'untraceable-focus'}));
 assert(p.instances[0].polygon.every(([x])=>x>=200&&x<=240),"letterboxed mask must map to source pixels, not square-model coordinates");
 assert(!validRasterNeural({...p,sourceSize:{width:Infinity,height:800}}));
 assert(!validRasterNeural({...p,instances:[{...p.instances[0],polygon:[[0,0],[1,0],[NaN,1]]}]}));
@@ -40,6 +47,23 @@ assert.equal(unobserved.walls.length,2,"a gap with no learned opening must stay 
 const partial={...fragmented,instances:[{...fragmented.instances[0],polygon:[[42,98],[54,98],[54,102],[42,102]]}]};
 const partialHost=applyRasterNeural({...base,calibration:{metersPerUnit:.02,referencePoints:[[0,0],[100,0]],referenceDistanceM:2}},partial,'ground',2.8);
 assert.equal(partialHost.windows.length,1);assert(Math.abs(partialHost.windows[0].width-20)<1e-8,'jamb extent is preserved even if the neural window mask is fragmented');
+const jambs=[{a:[0,0],b:[0,3],thickness:.16,source:'left'},{a:[4,0],b:[4,3],thickness:.16,source:'right'}],fullWindow={id:'whole-window',kind:'window',score:.95,polygon:[[4,0],[196,0],[196,6],[4,6]],tileIds:['tile-0'],approved:false};
+const recovered=recoverRasterWindowHosts(jambs,[fullWindow],.02);assert.equal(recovered.lines.length,3);assert.equal(recovered.gaps.get('whole-window').widthM,3.84,'Clear opening stops at jamb faces, not wall centres');
+const unequal=recoverRasterWindowHosts(jambs.map((j,i)=>({...j,thickness:i?.3:.1})),[fullWindow],.02).gaps.get('whole-window');assert(Math.abs(unequal.widthM-3.8)<1e-8);assert(Math.abs(unequal.center[0]*.02-1.95)<1e-8,'Unequal jamb thickness shifts the clear opening centre');
+assert.equal(recoverRasterWindowHosts(jambs,[],.02).lines.length,2,'A blank span never creates a window host');
+assert.equal(recoverRasterWindowHosts(jambs,[{...fullWindow,kind:'door'}],.02).lines.length,2);
+assert.equal(recoverRasterWindowHosts(jambs.slice(0,1),[fullWindow],.02).lines.length,1,'Two observed jambs are mandatory');
+assert.equal(recoverRasterWindowHosts(jambs,[{...fullWindow,score:.4}],.02).lines.length,2,'A weak window mask cannot close a blank span');
+assert.equal(recoverRasterWindowHosts(jambs,[{...fullWindow,polygon:[[4,0],[40,0],[40,6],[4,6]]}],.02).lines.length,2,'A short fragment cannot become a full-width window');
+const fragment={...fullWindow,polygon:[[65,0],[196,0],[196,6],[65,6]]},nearLeft={...fullWindow,id:'left-fragment',polygon:[[4,0],[25,0],[25,6],[4,6]]};
+assert.equal(recoverRasterWindowHosts(jambs,[fragment],.02).lines.length,2,'A distant jamb without learned endpoint evidence stays unconnected');
+assert.equal(recoverRasterWindowHosts(jambs,[fragment,nearLeft],.02).lines.length,3,'Fragmented windows may use a second learned fragment as endpoint evidence');
+const rotate=([x,y])=>[(x-y)/Math.SQRT2,(x+y)/Math.SQRT2];
+const oblique=recoverRasterWindowHosts(jambs.map(l=>({...l,a:rotate(l.a),b:rotate(l.b)})),[{...fullWindow,polygon:fullWindow.polygon.map(rotate)}],.02);
+assert.equal(oblique.lines.length,3,'Jamb recovery is not hardcoded to horizontal or vertical windows');assert(Math.abs(oblique.gaps.get('whole-window').widthM-3.84)<1e-8);
+const fullSpan=applyRasterNeural({...base,calibration:{metersPerUnit:.02,referencePoints:[[0,0],[100,0]],referenceDistanceM:2}},{...p,walls:jambs.map(w=>({start:w.a.map(v=>v/.02),end:w.b.map(v=>v/.02),thickness:8})),instances:[fullWindow]},'ground',2.8);
+assert.equal(fullSpan.windows.length,1,'Full-span windows survive conversion even without collinear wall stubs');
+assert(fullSpan.review.warnings.some(w=>w.startsWith('neural-window-jamb-hosts-provisional:')));
 assert.equal(fuseRasterWalls([{start:[0,20],end:[100,20],thickness:8}],[{start:[0,20.5],end:[100,20.5],thickness:7},{start:[0,20.5],end:[100,20.5],thickness:7}]).length,1);
 assert.equal(fuseRasterWalls([],[{start:[0,20],end:[40,20],thickness:8},{start:[60,20],end:[100,20],thickness:8}]).length,2,'detail fusion cannot close an unobserved doorway');
 const sourced={...plan,sheets:[{id:"a",levelId:"ground"},{id:"b",levelId:"ground"}],fixtures:[{...plan.fixtures[0],id:"a1",sheetId:"a"},{...plan.fixtures[0],id:"b1",sheetId:"b"}]};
@@ -48,6 +72,9 @@ const spaceMask=new Uint8Array(64*64),spaceScores=new Uint8Array(64*64).fill(255
 for(let y=4;y<50;y++)for(let x=4;x<(y<25?50:25);x++)spaceMask[y*64+x]=4;
 for(let y=10;y<18;y++)for(let x=10;x<18;x++)spaceMask[y*64+x]=0;
 const spaces=extractNeuralSpaces(spaceMask,spaceScores,64,64,p=>p);
+const semanticIsland=new Uint8Array(64*64);for(let y=4;y<60;y++)for(let x=4;x<60;x++)semanticIsland[y*64+x]=4;
+for(let y=20;y<25;y++)for(let x=20;x<25;x++)semanticIsland[y*64+x]=10;
+const islandFloor=extractNeuralSpaces(semanticIsland,spaceScores,64,64,p=>p);assert.equal(islandFloor.length,1);assert.equal(islandFloor[0].holes.length,0,'An unrenderably small floor-class island is not a physical hole');
 assert.equal(spaces.length,1);assert.equal(spaces[0].kind,"living");assert.equal(spaces[0].holes.length,1);
 assert(spaces[0].polygon.length>=6,"an L-shaped room must not become a convex rectangle");
 const {polygonProblem}=loadDomain(root+'canonical/polygon-validation');
@@ -78,6 +105,13 @@ const refined=refineRasterWalls(mask,scores,512,{x:0,y:0,width:512,height:512},{
 assert.equal(refined.length,1);assert(refined[0].thickness<=5,"source stroke width must not inherit the coarse neural mask width");
 assert(refined[0].start[1]>250 && refined[0].end[1]>250,"dark furniture outside neural support must not become walls");
 assert.throws(()=>rasterNeuralProposal({...result,spaces:{classes:SPACE_CLASSES,mask:"AA==",scores:"AA=="}}),/incompleta/);
+const uncertainRoom=new Uint8Array(size*size),uncertainScores=new Uint8Array(size*size).fill(80),floorCoverage=new Uint8Array(size*size),openingMask=new Uint8Array(size*size);
+for(let y=100;y<400;y++)for(let x=100;x<400;x++){uncertainRoom[y*size+x]=4;floorCoverage[y*size+x]=240;}
+for(let y=200;y<230;y++)for(let x=200;x<230;x++)openingMask[y*size+x]=2;
+for(let y=260;y<280;y++)for(let x=260;x<280;x++)openingMask[y*size+x]=3;
+const floorAcrossOpenings=rasterNeuralProposal({...result,mask:Buffer.from(openingMask).toString('base64'),scores:Buffer.from(scores).toString('base64'),content:{x:0,y:0,width:size,height:size},sourceSize:{width:size,height:size},spaces:{classes:SPACE_CLASSES,mask:Buffer.from(uncertainRoom).toString('base64'),scores:Buffer.from(uncertainScores).toString('base64'),coverageScores:Buffer.from(floorCoverage).toString('base64')}});
+assert.equal(floorAcrossOpenings.spaces.length,1);assert.equal(floorAcrossOpenings.spaces[0].holes.length,0,'Door/window regions cannot punch holes through a supported floor');
+assert.throws(()=>rasterNeuralProposal({...result,spaces:{classes:SPACE_CLASSES,mask:Buffer.from(uncertainRoom).toString('base64'),scores:Buffer.from(uncertainScores).toString('base64'),coverageScores:'AA=='}}),/suelo incompleto/);
 const focused=rasterNeuralProposal({...result,sourceRegion:{x:100,y:200,width:300,height:400}});
 assert(focused.instances[0].polygon.every(([x,y])=>x>=200&&x<=220&&y>=350&&y<=375),"a focused reading must return to full-sheet coordinates");
 assert.throws(()=>rasterNeuralProposal({...result,sourceRegion:{x:400,y:0,width:300,height:400}}),/Región/);

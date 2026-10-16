@@ -147,6 +147,12 @@ export function modelReadiness(plan: Blueprint) {
       count: 1,
     });
   const heights = plan.levels.filter((l) => l.heightSource !== "manual").length;
+  const provisionalFloors=plan.rooms.filter(r=>r.sheetId&&plan.sheets?.some(s=>s.id===r.sheetId&&s.neural?.spaces)&&!plan.review?.reviewedIds.includes(r.id));
+  if(provisionalFloors.length)checks.push({
+    id:'raster-floors',label:'Revisar contornos de suelo',
+    detail:'Los límites y huecos proceden de una máscara provisional. Contrástalos con el plano; no son losas ni vacíos estructurales verificados.',
+    action:'Revisar superficies',panel:'layers',count:provisionalFloors.length,
+  });
   if (heights)
     checks.push({
       id: "height",

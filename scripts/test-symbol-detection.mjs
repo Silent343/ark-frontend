@@ -17,6 +17,10 @@ assert.equal(symbolGeometry({...reviewed,items:[{...reviewed.items[4],stairType:
 assert(!validSymbols({...proposal,items:[{...proposal.items[0],kind:'plant'}]},{width:600,height:800}));
 const pilot={...model,id:'ark-objects-pilot-v1',revision:'d'.repeat(40),classes:['chair','table','sofa','bed','plant','stair'],training:{datasetSha256:'e'.repeat(64),images:82,epochs:36,annotationQuality:'agent-provisional',independentValidation:false}};
 const planting={...proposal,model:pilot,items:[{...proposal.items[0],kind:'plant',status:'confirmed'}]};
+const vehicle={...planting,model:{...pilot,id:'ark-objects-pilot-v2',classes:[...pilot.classes,'vehicle']},items:[{...planting.items[0],kind:'vehicle',box:[100,200,200,450]}]};
+assert(validSymbols(vehicle,{width:600,height:800}));
+assert(!validSymbols({...vehicle,model:pilot},{width:600,height:800}));
+const car=symbolGeometry(vehicle,'ground',2.8).fixtures[0];assert.equal(car.kind,'vehicle');assert.equal(car.x,150);assert.equal(car.y,325);assert.equal(car.width,100);assert.equal(car.depth,250);assert.equal(car.height,1.5);
 assert(validSymbols(planting,{width:600,height:800}));assert.equal(symbolGeometry(planting,'ground',2.8).fixtures[0].kind,'plant');
 assert(!validSymbols({...planting,model:{...pilot,training:{...pilot.training,independentValidation:true}}},{width:600,height:800}));
 const fixture={...geometry.fixtures[0],sheetId:'page-a'},page={id:'page-a',levelId:'ground',neural:{symbols:reviewed}};

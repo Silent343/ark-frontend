@@ -98,6 +98,7 @@ export type PlanDiscipline =
 
 /** A source page stays identifiable even when several drawings share a level. */
 export interface PlanSheet {
+  sourceCalibration?: import("../plan-calibration").SourceCalibration;
   /** Full raster used for inference, distinct from the compressed display thumbnail. */
   analysisImage?: string;
   neural?: import("../raster-neural").RasterNeuralProposal;

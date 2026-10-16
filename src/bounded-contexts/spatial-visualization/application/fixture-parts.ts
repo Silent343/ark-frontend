@@ -131,6 +131,10 @@ export function buildFixtureParts(
         box("fabric", 0, 0.5, 0, 0.92, 0.12, 0.88);
         box("fabric", 0, 0.79, 0.4, 0.92, 0.42, 0.12);
         box("metal", 0, 0.24, 0, 0.45, 0.48, 0.55);
+      } else if(item.kind==='vehicle'){
+        box('metal',0,.38,0,.92,.35,.98);
+        box('glass',0,.7,.02,.76,.29,.45);
+        for(const x of [-.44,.44])for(const z of [-.31,.31])add('dark','sphere',x,.22,z,.12,.3,.14);
       } else {
         box(
           item.kind === "sink" ||
@@ -294,8 +298,18 @@ export function buildFixtureParts(
         add("green", "sphere", 0, 0.64, 0, 1, 0.72, 1);
         break;
       case "vehicle-compact":
-        box("metal", 0, 0.4, 0, 0.92, 0.4, 1);
-        box("glass", 0, 0.75, 0.03, 0.8, 0.3, 0.5);
+        // Generic car assembly, not an inferred make/model. Preserve the detected
+        // footprint while distinguishing body, cabin, roof, wheels and lights.
+        add("metal", "sphere", 0, 0.38, 0, 0.92, 0.42, 0.98);
+        box("metal", 0, 0.32, 0, 0.9, 0.25, 0.82);
+        box("glass", 0, 0.68, 0.02, 0.77, 0.3, 0.48);
+        box("metal", 0, 0.86, 0.02, 0.74, 0.06, 0.28);
+        for(const z of [-0.34,0.34])box("metal",0,0.54,z,0.83,0.08,0.21);
+        for(const z of [-0.48,0.48])box("dark",0,0.3,z,0.78,0.06,0.03);
+        for(const x of [-0.29,0.29]){
+          box("ceramic",x,0.43,-0.47,0.16,0.07,0.02);
+          box("wood",x,0.43,0.47,0.16,0.06,0.02);
+        }
         for (const x of [-0.44, 0.44])
           for (const z of [-0.31, 0.31])
             add("dark", "sphere", x, 0.22, z, 0.12, 0.3, 0.14);

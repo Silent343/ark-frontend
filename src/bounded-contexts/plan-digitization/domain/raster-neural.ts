@@ -8,14 +8,15 @@ import {
   validNeuralSpaces,
   type NeuralSpace,
 } from "./neural-spaces";
-import { validNeuralModel, type NeuralInstance } from "./neural-contract";
+import { validNeuralModel, SPACE_MODEL_IDS, type NeuralInstance } from "./neural-contract";
 import {
   extractNeuralInstances,
   associateNeuralOpening,
   fuseNeuralInstances,
 } from "./neural-instances";
 import {fuseRasterWalls} from './raster-detail-geometry';
-import {bridgeRasterOpenings} from './raster-opening-hosts';
+import {bridgeRasterOpenings,recoverRasterWindowHosts} from './raster-opening-hosts';
+import {refineRasterFloor} from './raster-floor-refinement';
 import { mergeLines, signedArea, contains, type Point2 } from "./cad-topology";
 import { buildPlanarGraph } from "./canonical/planar-graph";
 import { polygonProblem } from "./canonical/polygon-validation";
@@ -34,6 +35,20 @@ export interface RasterNeuralProposal {
   instances: NeuralInstance[];
   spaces?: NeuralSpace[];
   sourceRegion?: { x: number; y: number; width: number; height: number };
+  focusModelId?: string;
+}
+
+/** The caller must establish that both proposals belong to the same prepared
+ * canvas. Dimensions alone are not evidence of source identity. */
+export function preserveReviewedSymbols(
+  next: RasterNeuralProposal,
+  previous: RasterNeuralProposal | null,
+  samePreparedSource: boolean,
+): RasterNeuralProposal {
+  if (!samePreparedSource || next.symbols || !previous?.symbols ||
+    next.sourceSize.width !== previous.sourceSize.width ||
+    next.sourceSize.height !== previous.sourceSize.height) return next;
+  return { ...next, symbols: previous.symbols };
 }
 
 export function validRasterNeural(
@@ -64,7 +79,8 @@ export function validRasterNeural(
     !Array.isArray(p.instances) ||
     p.instances.length > 2000 ||
     !validNeuralSpaces(p.spaces, size.width, size.height) || !validSymbols(p.symbols,size) ||
-    (p.spaces !== undefined && p.model.id !== "cubicasa-multitask-v1")
+    (p.spaces !== undefined && !SPACE_MODEL_IDS.includes(p.model.id)) ||
+    (p.focusModelId !== undefined && p.focusModelId !== 'cubicasa-multitask-v1')
   )
     return false;
   if (p.sourceRegion !== undefined) {
@@ -190,7 +206,7 @@ export function rasterNeuralProposal(
   let spaces: NeuralSpace[] | undefined;
   if (result.spaces) {
     if (
-      result.model.id !== "cubicasa-multitask-v1" ||
+      !SPACE_MODEL_IDS.includes(result.model.id) ||
       result.spaces.classes.join(",") !== SPACE_CLASSES.join(",")
     )
       throw new Error("Categorías de espacios incompatibles.");
@@ -202,6 +218,8 @@ export function rasterNeuralProposal(
       );
     if (spaceMask.length !== mask.length || spaceScores.length !== mask.length)
       throw new Error("Máscara de espacios incompleta.");
+    const coverage=result.spaces.coverageScores?Uint8Array.from(atob(result.spaces.coverageScores),s=>s.charCodeAt(0)):spaceScores;
+    if(coverage.length!==spaceMask.length)throw new Error('Soporte de suelo incompleto.');
     for (let y = 0; y < height; y++)
       for (let x = 0; x < width; x++) {
         const i = y * width + x;
@@ -210,13 +228,14 @@ export function rasterNeuralProposal(
           y < c.y ||
           x >= c.x + c.width ||
           y >= c.y + c.height ||
-          (mask[i] >= 1 && mask[i] <= 3 && scores[i] >= 140)
+          // A door/window is a wall opening, not a hole through the floor.
+          (mask[i] === 1 && scores[i] >= 140)
         )
           spaceMask[i] = 0;
       }
     spaces = extractNeuralSpaces(
       spaceMask,
-      spaceScores,
+      coverage,
       width,
       height,
       toSource,
@@ -228,6 +247,7 @@ export function rasterNeuralProposal(
     model: result.model,
     sourceSize: size,
     sourceRegion: region,
+    ...(result.focusModelId?{focusModelId:result.focusModelId}:{}),
     overlay: result.overlay,
     elapsedMs: result.elapsedMs,
     counts: result.counts,
@@ -316,7 +336,9 @@ export function applyRasterNeural(
     0.04,
     0.02,
   );
-  const {lines,gaps:openingGaps}=bridgeRasterOpenings(mergedLines,proposal.instances,ratio);
+  const bridged=bridgeRasterOpenings(mergedLines,proposal.instances,ratio);
+  const recovered=recoverRasterWindowHosts(bridged.lines,proposal.instances,ratio);
+  const lines=recovered.lines,openingGaps=new Map([...bridged.gaps,...recovered.gaps]);
   const walls = lines.map((w, i) => ({
     id: `neural-image-wall-${i}`,
     levelId,
@@ -331,7 +353,7 @@ export function applyRasterNeural(
   let unhosted = 0,openingConflicts=0;
   for (const instance of [...proposal.instances].sort((a,b)=>b.score-a.score)) {
     if (instance.kind === "door" || instance.kind === "window") {
-      const corrected = associateNeuralOpening(
+      let corrected = associateNeuralOpening(
         instance,
         walls.map((w) => ({
           a: w.start,
@@ -340,6 +362,9 @@ export function applyRasterNeural(
         })),
         ratio,
       );
+      const recoveredIndex=lines.findIndex(l=>l.source===`window-jambs-${instance.id}`);
+      const recoveredGap=recovered.gaps.get(instance.id);
+      if(recoveredIndex>=0&&recoveredGap)corrected={...corrected,hostStatus:'hosted',hostWallIndex:recoveredIndex,center:recoveredGap.center,widthM:recoveredGap.widthM};
       if (
         corrected.hostStatus !== "hosted" ||
         !corrected.center ||
@@ -409,7 +434,12 @@ export function applyRasterNeural(
   );
   const slabs: FloorSlab[] = [],
     rooms: Room[] = [];
-  const semanticSpaces=(proposal.spaces??[]).filter(s=>!polygonProblem({outer:s.polygon,holes:s.holes}));
+  let floorOcclusions=0,floorsSnapped=0;
+  const semanticSpaces=(proposal.spaces??[]).filter(s=>!polygonProblem({outer:s.polygon,holes:s.holes})).map(space=>{
+    const refined=refineRasterFloor(space.polygon,space.holes,walls,ratio,proposal.symbols);
+    floorOcclusions+=refined.occlusions;if(refined.snapped)floorsSnapped++;
+    return {...space,polygon:refined.polygon,holes:refined.holes};
+  });
   for (const face of topology.faces.filter(
     (f) => !f.exterior,
   )) {
@@ -445,11 +475,11 @@ export function applyRasterNeural(
         polygon,holes,
       });
   }
-  let invalidSpaces=0;
-  for (const space of proposal.spaces ?? []) {
+  const invalidSpaces=(proposal.spaces?.length??0)-semanticSpaces.length;
+  for (const space of semanticSpaces) {
     const polygon = space.polygon,
       holes = space.holes;
-    if(polygonProblem({outer:polygon,holes})) {invalidSpaces++;continue;}
+    if(polygonProblem({outer:polygon,holes})) continue;
     const area =
       (Math.abs(signedArea(polygon)) -
         holes.reduce((sum, h) => sum + Math.abs(signedArea(h)), 0)) *
@@ -499,7 +529,10 @@ export function applyRasterNeural(
           ? ["neural-space-boundaries-provisional"]
           : ["neural-spaces-unavailable"]),
         ...(unhosted ? [`neural-unhosted:${unhosted}`] : []),
+        ...(recovered.gaps.size ? [`neural-window-jamb-hosts-provisional:${recovered.gaps.size}`] : []),
         ...(invalidSpaces ? [`neural-invalid-spaces:${invalidSpaces}`] : []),
+        ...(floorOcclusions ? [`neural-floor-object-occlusions:${floorOcclusions}`] : []),
+        ...(floorsSnapped ? [`neural-floor-wall-alignment:${floorsSnapped}`] : []),
         ...(openingConflicts ? [`neural-opening-type-conflicts:${openingConflicts}`] : []),
       ],
     },

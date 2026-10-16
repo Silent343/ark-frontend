@@ -11,6 +11,8 @@ export const EXPANDED_NEURAL_CLASSES = [
   "chimney",
   "railing",
 ];
+export const SPACE_MODEL_IDS=['cubicasa-multitask-v1','ark-architecture-pilot-v1','ark-architecture-pilot-v2'];
+export interface ArchitecturePilotTraining {annotationQuality:string;independentValidation:boolean;parentCheckpointSha256:string;datasetSha256:string;images:number;epochs:number;openingCheckpointSha256?:string;openingArtifactSha256?:string;openingEpochs?:number}
 export const NEURAL_CLASS_LABELS: Record<string, string> = {
   wall: "Muros",
   door: "Puertas",
@@ -32,13 +34,18 @@ export function validNeuralModel(model: {
   artifactSha256: string;
   usage: string;
   classes: string[];
+  training?: ArchitecturePilotTraining;
 }) {
+  if(['ark-architecture-pilot-v1','ark-architecture-pilot-v2'].includes(model?.id)&&(!model.training||model.training.annotationQuality!=='agent-provisional'||model.training.independentValidation!==false||model.training.parentCheckpointSha256!=='dd20b4e1bf1d670f2125107b079df06958b1ccd36e49a464ab739aeb00b8e7a2'||!/^[a-f0-9]{64}$/.test(model.training.datasetSha256)||!Number.isInteger(model.training.images)||model.training.images<1||model.training.images>10000||!Number.isInteger(model.training.epochs)||model.training.epochs<1||model.training.epochs>1000))return false;
+  if(model?.id==='ark-architecture-pilot-v2'&&(!model.training||!/^[a-f0-9]{64}$/.test(model.training.openingCheckpointSha256??'')||!/^[a-f0-9]{64}$/.test(model.training.openingArtifactSha256??'')||!Number.isInteger(model.training.openingEpochs)||(model.training.openingEpochs??0)<1||(model.training.openingEpochs??0)>1000))return false;
   return (
     !!model &&
     [
       "openbim-m2-unet",
       "yytsi-resnet34-unet",
       "cubicasa-multitask-v1",
+      "ark-architecture-pilot-v1",
+      "ark-architecture-pilot-v2",
     ].includes(model.id) &&
     typeof model.revision === "string" &&
     /^(?:[a-f0-9]{40}|v1\.0\.0)$/.test(model.revision) &&
@@ -47,7 +54,7 @@ export function validNeuralModel(model: {
     model.usage === "experimental-research" &&
     Array.isArray(model.classes) &&
     model.classes.join(",") ===
-      (model.id === "cubicasa-multitask-v1"
+      (SPACE_MODEL_IDS.includes(model.id)
         ? EXPANDED_NEURAL_CLASSES
         : CORE_NEURAL_CLASSES
       ).join(",")

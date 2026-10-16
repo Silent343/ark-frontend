@@ -306,10 +306,12 @@ export function ModelScreen({ projectId }: { projectId: string }) {
                   detectadas. El 3D usa las aberturas asociadas a muros y los
                   objetos con familia compatible.
                 </p>
+                <p className="model-inspector-help">Ventanas propuestas: {sheet.neural!.instances.filter(i=>i.kind==='window').length}; incorporadas en esta hoja: {data.blueprint.windows.filter(w=>w.sheetId===sheet.id).length}. Las propuestas sin asociación o descartadas necesitan revisión; no equivalen a ventanas verificadas.</p>
                   {sheet.neural!.symbols && <p className="model-inspector-help">
                     Mobiliario especializado: {sheet.neural!.symbols!.items.length} propuestas;
                     {" "}{sheet.neural!.symbols!.items.filter(i=>i.status==='confirmed').length} confirmadas para 3D.
-                    {!sheet.neural!.symbols!.model.classes.includes('plant')&&' Plantas no soportadas.'} Alturas y detalles aproximados.
+                    {!sheet.neural!.symbols!.model.classes.includes('plant')&&' Plantas no soportadas.'}
+                    {!sheet.neural!.symbols!.model.classes.includes('vehicle')&&' Coches no soportados por este modelo.'} Alturas y detalles aproximados.
                   </p>}
                 <button
                   type="button"

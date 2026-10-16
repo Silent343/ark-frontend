@@ -20,6 +20,7 @@ import type {
 import {
   calibratePlan,
   metersPerUnit,
+  restoreSourceCalibration,
   type PlanPoint,
 } from "../../domain/plan-calibration";
 import { mergeImportedReview } from "../../domain/plan-review";
@@ -377,12 +378,12 @@ export function PlanImportDialog({
         const image = new Image();
         image.onload = () => {
           if (!live) return;
-          setPoints([
-            [0, 0],
-            [image.naturalWidth, 0],
-          ]);
-          setDistance(String(sheet.width * metersPerUnit(blueprint)));
-          setSavedScale(true);
+          const calibration=restoreSourceCalibration(sheet.sourceCalibration,{width:image.naturalWidth,height:image.naturalHeight});
+          if(calibration){
+            setPoints(calibration.referencePoints);
+            setDistance(String(calibration.referenceDistanceM));
+            setSavedScale(true);
+          }
         };
         image.src = analysisImage;
       }
@@ -645,6 +646,11 @@ export function PlanImportDialog({
         width: prepared.width * ratio,
         height: prepared.height * ratio,
         metersPerUnit: draft.calibration!.metersPerUnit,
+        sourceCalibration: {
+          sourceSize: {width:prepared.width,height:prepared.height},
+          referencePoints: draft.calibration!.referencePoints,
+          referenceDistanceM: draft.calibration!.referenceDistanceM,
+        },
         evidence: {
           method: draft.review!.method,
           warnings: draft.review!.warnings,
@@ -1218,6 +1224,9 @@ export function PlanImportDialog({
                   marcar una medida.
                 </p>
               )}
+              {initialSheetId&&!savedScale&&points.length===0&&(
+                <p className="plan-field-explanation">Este plano no conservaba los puntos de su medida original. Marca una cota o la barra de escala para recuperar dimensiones fiables; no usaremos el ancho de la imagen como referencia.</p>
+              )}
               <ol className="plan-measure-instructions">
                 <li>
                   En la imagen, pulsa el inicio y el final de un tramo que
@@ -1234,6 +1243,7 @@ export function PlanImportDialog({
                     onClick={() => {
                       setPoints([]);
                       setDistance("");
+                      setSavedScale(false);
                     }}
                   >
                     Volver a marcar

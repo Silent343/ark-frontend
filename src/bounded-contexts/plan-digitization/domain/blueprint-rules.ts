@@ -3,6 +3,7 @@ import { planElements, planTopologyIssues } from "./plan-review";
 import type { Blueprint } from "./entities/blueprint";
 import { validModelEvidence } from "./model-evidence";
 import { validRasterNeural } from "./raster-neural";
+import { validSourceCalibration } from "./plan-calibration";
 /** Validates shared geometry before any client can consume it in the 2D or WebGL renderer. */
 export function validateSharedBlueprint(value: Record<string, unknown>) {
   const invalid = () => {
@@ -107,6 +108,7 @@ export function validateSharedBlueprint(value: Record<string, unknown>) {
           }
         }
       } else if (key === "sheets") {
+        if(row.sourceCalibration!==undefined&&!validSourceCalibration(row.sourceCalibration,Number(row.metersPerUnit)))invalid();
         if(row.analysisImage!==undefined && (typeof row.analysisImage!=='string'||row.analysisImage.length>4_200_000||!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(row.analysisImage)))invalid();
         if (
           !["architecture", "structure", "electrical", "plumbing"].includes(

@@ -36,9 +36,11 @@ export interface NeuralPlanResult {
     artifactSha256: string;
     usage: string;
     classes: string[];
+    training?: import('./neural-contract').ArchitecturePilotTraining;
   };
-  spaces?: { classes: string[]; mask: string; scores: string };
+  spaces?: { classes: string[]; mask: string; scores: string; coverageScores?:string };
   sourceRegion?: {x:number;y:number;width:number;height:number};
+  focusModelId?: string;
 }
 export interface CadNeuralAnalysis {
   tiling?: NeuralTiling;
